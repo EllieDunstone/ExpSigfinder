@@ -1,0 +1,217 @@
+---
+title: "ExpSigFinder signature analysis"
+author: "Ellie Dunstone"
+date: "2023-01-31"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages}
+library(tidyverse)
+library(pheatmap)
+library(NatParksPalettes)
+library(ggbiplot)
+library(M3C)
+```
+
+## Introduction
+
+This script is for the downstream analysis of putative signatures output by ExpSigFinder (see expsigfinder_wrapper.Rmd). 
+
+## Read in signature table
+
+```{r read in sigs}
+all_sigs <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/expsigfinder_20230127_all_sigs.csv", sep = ",", header = TRUE, row.names = 1)
+```
+# Define function for calculating cosine similarity
+
+This section defines a function to calculate the cosine similarity between the spectra/signatures in your test and reference sets. In this script, the putative signatures will be compared against each other first to assess similarity between signatures of the same treatment in different organoid lines, and different treatments that generate similar signatures.
+
+Note: i will also add code to look at the background signatures, but these are currently not included in the output sig table.
+
+```{r cosine similarity function}
+#Function for cosine similarity calculation
+cos_sim = function(x, y) {res = x %*% y / (sqrt(x %*% x) * sqrt(y %*% y))
+res = as.numeric(res)
+return(res)}
+
+comparesignatures_cossim <- function(signatures1,signatures2){
+  signcompared=matrix(nrow=length(signatures1[1,]),ncol=length(signatures2[1,]))
+  for (i in 1:length(signatures1[1,])){
+    for (j in 1:length(signatures2[1,])){    
+      signcompared[i,j]=cos_sim(signatures1[,i],signatures2[,j])
+    }}    
+  return(signcompared)
+}
+```
+
+## Calculate cosine similarities and generate output file
+
+First, set your test and reference signatures. Here, these are the same (the file of all signatures).
+
+```{r set inputs}
+test_signatures <- all_sigs[order(row.names(all_sigs)),]
+test_signatures <- as.matrix(test_signatures)
+
+reference_signatures <- test_signatures
+```
+
+We can now use this function to calculate cosine similarities between the test and reference set, and generate an output file with the results.
+
+```{r cossim output}
+#Calculate cosine similarities
+csmap = comparesignatures_cossim(reference_signatures, test_signatures)
+
+#Write out your output as table
+rownames(csmap) = colnames(reference_signatures)
+colnames(csmap) = colnames(test_signatures)
+write.csv(csmap, file = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/analysis/20230131_expsigfinder_cossim_all_v_all.csv", row.names = TRUE)
+```
+
+## Subset results data for plotting (optional)
+
+If you want to plot only a subset of the data, then you can edit this section to remove the rows/columns corresponding to the samples you don't want to include in the plot. If you do this, you need to change the plotting command to plot the new table ```csmap_subset```.
+
+```{r subset results}
+#Subset for plotting if needed
+csmap_subset <- csmap[c(1,2,4:12,14),c(1,2,4:12,14)]
+```
+
+## Plot results as a heatmap
+
+We can now plot these results as a heatmap. There are lots of options for how to show the data, with details available in the [pheatmap documentation](https://www.rdocumentation.org/packages/pheatmap/versions/1.0.12/topics/pheatmap).
+
+```{r heatmap}
+pheatmap(csmap, color=natparks.pals("Acadia",type="continuous",n=40),border_color="NA",cellwidth = 4, cellheight = 4, angle_col = 45,cluster_rows=TRUE,cluster_cols=TRUE, show_rownames = T, show_colnames = T, fontsize = 4)
+```
+
+## Plot distribution of cosine similarities
+
+Plot the distribution of cosine similarities between the signatures to attempt to identify a sensible cut off for merging them.
+
+```{r cosine similarity dist plot}
+cossims <- unique(unlist(as.list(csmap))) #removing duplicates so each point not included twice, and to remove all but one self-comparison. This could be improved. See below for a better method - rework this.
+
+hist(cossims, breaks = "Scott")
+
+cossims_df <- as.data.frame(cossims)
+ggplot(cossims_df, aes(x="cosine similarities", y=cossims)) +
+  geom_violin()
+```
+
+We can now filter the comparisons in order to look at which signatures are similar. First, format the table:
+
+```{r format cossim df}
+
+#reformat the table
+csmap_tidy <- as.data.frame(cbind(sig1 = rownames(csmap), csmap))
+rownames(csmap_tidy) <- NULL
+
+csmap_tidy <- pivot_longer(csmap_tidy, cols=c(2:length(csmap_tidy)), names_to = "sig2", values_to = "cossim")
+
+#filter to remove self-comparisons
+csmap_tidy <- filter(csmap_tidy, sig1 != sig2)
+
+#filter to remove duplicates 
+# entries <- list()
+# include <- c()
+# 
+# for (i in 1:nrow(csmap_tidy)){
+#   if (sort(c(csmap_tidy$sig1[i], csmap_tidy$sig2[i], csmap_tidy$cossim[i])) %in% entries) {
+#     include <- c(include, FALSE)
+#   } else {
+#     include <- c(include, TRUE)
+#   }
+#   entries[[i]] <- sort(c(csmap_tidy$sig1[i], csmap_tidy$sig2[i], csmap_tidy$cossim[i]))
+# }
+
+
+#dumb method but quicker
+csmap_tidy_sorted <- csmap_tidy[rev(order(csmap_tidy$cossim)),] #sort table
+csmap_tidy_sorted_unique <- csmap_tidy_sorted[seq(1, nrow(csmap_tidy_sorted)-1, 2), ] #remove every other row
+length(csmap_tidy_sorted_unique$cossim) == length(unique(csmap_tidy_sorted_unique$cossim)) #check that only unique rows (ID'd using unique cossim values) remain - this may give false negative (FALSE) result if you have two different entries with identical cossim values
+
+cossim_table <- csmap_tidy_sorted_unique
+```
+
+Now we can filter these to look at which signatures are similar:
+
+```{r filter sig pairs by cossim}
+cossim_table_0.8 <- filter(cossim_table, cossim > 0.8)
+cossim_table_0.9 <- filter(cossim_table, cossim > 0.9)
+```
+
+Attempting hierarchical clustering:
+
+```{r cossim dist hclust}
+csmap_dist <- dist(1-csmap) #make dist object using cs distance (1 - cs sim)
+
+clust_csmap_dist <- hclust(csmap_dist)
+
+plot(clust_csmap_dist, hang = -1, cex = 0.4)
+
+# Convert hclust into a dendrogram and plot
+dend_csmap_dist <- as.dendrogram(clust_csmap_dist)
+# plot
+nodePar <- list(lab.cex = 0.4, pch = c(NA, 19), 
+                cex = 0.1, col = "blue")
+plot(dend_csmap_dist, type = "rectangle", xlab = "Height",  cex=0.4, horiz=TRUE, nodePar=nodePar)
+
+#using APE package
+library(ape)
+
+big_colour = grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)]
+
+treatment_group = gsub("_[^ ]*", "", clust_csmap_dist$labels)
+# check the TYPE numbers are correct
+big_colour_palette <- sample(big_colour, length(unique(treatment_group)))
+col_assignment = big_colour_palette[1:length(unique(treatment_group))]
+names(col_assignment) = unique(treatment_group)
+cols = col_assignment[treatment_group]
+# then pass COLS into your plot
+
+plot(as.phylo(clust_csmap_dist), type = "fan", cex=0.5, label.offset = 0.1, tip.color = cols)
+
+```
+
+
+## Plot results as a PCA
+
+Here I am trialing PCA to cluster the signatures. 
+
+```{r PCA}
+
+#Add organoid line and treatment metadata
+t_all_sigs <- t(all_sigs)
+t_all_sigs_metadata <- as.data.frame(t_all_sigs) %>% mutate(sig_name = rownames(t_all_sigs)) %>% mutate(treatment = str_split_i(sig_name, "_", 1)) %>% mutate(org_line = str_split_i(sig_name, "_", 2))
+
+all_sigs.pca <- prcomp(t_all_sigs, center = TRUE, scale. = TRUE)
+summary(all_sigs.pca)
+
+ggbiplot(all_sigs.pca, var.axes = FALSE, groups = t_all_sigs_metadata$treatment) +
+  theme_classic()
+
+```
+
+## Plot results as a tSNE
+
+Here I am trialing tSNE to cluster the signatures. 
+
+```{r tSNE}
+tsne(all_sigs, labels=t_all_sigs_metadata$treatment, text=t_all_sigs_metadata$treatment,
+textlabelsize = 2, perplex = 10)
+```
+
+## Plot results as a UMAP
+
+Here I am trialing UMAP to cluster the signatures. 
+
+```{r UMAP}
+umap(all_sigs, labels=t_all_sigs_metadata$treatment, text=t_all_sigs_metadata$treatment,
+textlabelsize = 2)
+```

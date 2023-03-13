@@ -1,0 +1,328 @@
+---
+title: "ExpSigfinder wrapper - DBS"
+author: "Ellie Dunstone"
+date: "13/02/2023"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include=FALSE}
+##load packages
+library(ExpSigfinder)
+library(Rmisc)
+library(tidyverse)
+library(ggrepel)
+library(data.table)
+```
+
+## Introduction 
+
+This is a script to implement ExpSigfinder (https://github.com/xqzou/ExpSigfinder), based on functions written by Zoe Zou (2022). This version is for DBS.
+
+## Install package
+
+You only need to run this the first time to install the github package. If you need to do this, then re run the package loading chunk above afterwards.
+
+```{r install expsigfinder}
+##install package, only needed when running for the first time
+library(devtools)
+install_github("xqzou/ExpSigfinder")
+```
+
+## Read in mutation matrix
+
+Read in the mutation matrix (input your own path to file). This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
+
+```{r read matrix}
+mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/dbs_mutation_matrix.tsv", sep = "\t", header = T, as.is = T) 
+```
+
+If required, trim the sample names (sometimes these get output with the parent dir prefixed).
+
+```{r trim sample names}
+#Trim sample IDs 
+colnames(mutation_matrix)[-1]<-str_sub(colnames(mutation_matrix),30,-1)[-1] #May need to alter the start position depending on input
+```
+
+## Read in metadata
+
+Read in table of metadata containing the treatment name, and a column 'group' indicating whether a sample is a control. Other metadata columns may be included if needed for later analysis.
+
+```{r read metadata}
+metadata <- read.table("/Users/ed4/Documents/phd/chemo_project/Metadata/WP4/wp4_sample_subsetting.csv", sep = ",", header = T, as.is = T)
+```
+
+
+## Subset per organoid line
+
+Background needs to be calculated per organoid line, this chunk creates a mutation matrix for each line.
+
+```{r subset matrix per donor}
+org_lines <- unique(metadata$patient) #grab all organoid line IDs
+
+for (org in org_lines) {
+  assign(paste0(org, "_mutation_matrix"), cbind(MutationType=mutation_matrix[,1], select(mutation_matrix, matches(org))))
+}
+
+```
+
+
+## Add metadata
+
+Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once?
+
+```{r add metadata}
+
+t_mutation_matrix <- t(PD57287_mutation_matrix)
+colnames(t_mutation_matrix) <- t_mutation_matrix[1,]
+t_mutation_matrix <- t_mutation_matrix[-1,]
+t_mutation_matrix <- as.data.frame(cbind(rownames(t_mutation_matrix), t_mutation_matrix))
+colnames(t_mutation_matrix)[1] <- "sample"
+
+mutation_matrix_metadata <- left_join(t_mutation_matrix, select(metadata, sample, patient, tissue_sample, treatment, sample_name, concentration, tissue, group))
+```
+
+## Calculate background
+
+Calculate the means of control samples for each mutation type, and the overall mean burden. 
+
+First, we identify the control samples:
+
+```{r select controls}
+controls <- filter(mutation_matrix_metadata, group=="control")
+control_names <- controls$sample
+```
+
+If you need to exclude any problematic controls at this stage, this chunk can be used:
+
+```{r adjust controls}
+controls <- filter(mutation_matrix_metadata, group=="control" & sample!="PD52491x_ds0001" & sample!="PD52491u_ds0001")
+control_names <- control_names[-c(6,7)]
+```
+
+We now calculate the background burden and spectrum using these samples.
+
+```{r calculate background}
+#calculate mean counts of each mutation type across all control samples
+PD57287_mutation_matrix <- PD57287_mutation_matrix %>%
+  mutate(bg_profile = rowMeans(PD57287_mutation_matrix[,control_names]))
+
+#calculate mean total mutation burden across all control samples
+bg_mean <- sum(PD57287_mutation_matrix$bg_profile)
+print(bg_mean)
+```
+
+
+## Make profiles for treatment groups and plot
+
+
+```{r calculate and plot treatment group profiles - individual treatment group}
+
+#Note: Currently will not output plots to correct location - needs fixing
+
+#select appropriate samples by treatment group
+treatment_group <- filter(mutation_matrix_metadata, treatment=="thiotepa")
+group_names <- treatment_group$sample
+
+# Make profile of treatment group samples with background removed (input sample names here)
+Wrap_KOSig(PD41849_mutation_matrix, "bg_profile", group_names, 100, bg_mean, 2, "thiotepa")
+sig <- read.table("thiotepa.txt", sep = "\t", header = T, as.is = T)
+plotCountbasis(sig, 1, 6, 9, paste0("thiotepa", ".pdf"))
+plotPercentagebasis(sig, 1, 6, 9, paste0("thiotepa", "_percentage.pdf"))
+
+# # Med
+# Wrap_KOSig(df,"bg_profile",c("EMSmedRep4c.1","EMSmedRep2c.1","EMSmedRep3c.1"),100, bg_mean*0.8,2,"EMSmed")
+# sig <- read.table("EMSmed.txt", sep = "\t", header = T, as.is = T)
+# plotCountbasis(sig,1,6,9,paste0("EMSmed",".pdf"))
+# plotPercentagebasis(sig,1,6,9,paste0("EMSmed","_percentage.pdf"))
+# 
+# # Low
+# Wrap_KOSig(df,"bg_profile",c("EMSlowRep2c.1","EMSlowRep3c.1","EMSlowRep4c.1"),100, bg_mean*0.8,3,"EMSlow")
+# sig <- read.table("EMSlow.txt", sep = "\t", header = T, as.is = T)
+# plotCountbasis(sig,1,6,9,paste0("EMSlow",".pdf"))
+# plotPercentagebasis(sig,1,6,9,paste0("EMSlow","_percentage.pdf"))
+```
+
+Automated for all treatment groups:
+
+```{r calculate and plot treatment group profiles for all treatment groups}
+
+#Generate list of non-control treatment group names
+treatment_groups <- unique(filter(mutation_matrix_metadata, group != "control")$treatment)
+
+#Run calculation and plotting for each treatment group
+for (i in treatment_groups) {
+  print(paste0("Analysing treatment group: ", i))
+  
+  #select appropriate samples by treatment group
+  treatment_group <- filter(mutation_matrix_metadata, treatment==i)
+  group_names <- treatment_group$sample
+  print(paste0(group_names))
+  
+  # Make profile of treatment group samples with background removed - skip and print error if one group fails
+  tryCatch({
+    Wrap_KOSig(PD41849_mutation_matrix, "bg_profile", group_names, 100, bg_mean, 2, i)
+    sig <- read.table(paste0(i,".txt"), sep = "\t", header = T, as.is = T)
+    plotCountbasis(sig, 1, 6, 9, paste0(i, ".pdf"))
+    plotPercentagebasis(sig, 1, 6, 9, paste0(i, "_percentage.pdf"))}, error=function(e){cat(paste0("ERROR for treatment group ", i, ": "),conditionMessage(e), "\n")})
+}
+
+```
+
+Or for something other than treatment group...
+
+```{r calculate and plot group profiles for custom groups}
+
+#Generate list of non-control group names
+custom_groups <- unique(filter(mutation_matrix_metadata, group != "control")$tissue)
+
+#Run calculation and plotting for each treatment group
+for (i in custom_groups) {
+  print(paste0("Analysing group: ", i))
+  
+  #select appropriate samples by treatment group
+  custom_group <- filter(mutation_matrix_metadata, tissue==i)
+  group_names <- custom_group$sample
+  print(paste0(group_names))
+  
+  # Make profile of treatment group samples with background removed - skip and print error if one group fails
+  tryCatch({
+    Wrap_KOSig(PD44571_mutation_matrix, "bg_profile", group_names, 100, bg_mean, 2, i)
+    sig <- read.table(paste0(i,".txt"), sep = "\t", header = T, as.is = T)
+    plotCountbasis(sig, 1, 6, 9, paste0(i, ".pdf"))
+    plotPercentagebasis(sig, 1, 6, 9, paste0(i, "_percentage.pdf"))}, error=function(e){cat(paste0("ERROR for group ", i, ": "),conditionMessage(e), "\n")})
+}
+
+```
+
+
+## Calculate mean burden per genome and confidence intervals for control
+
+```bg_mean``` is the mean number of raw mutation calls per genome, but we need to account for variation in effective coverage (total base calls). 
+
+First we select the controls for this patient:
+
+```{r select controls}
+#read in annotated burden matrix with dbs sums 
+dbs_annotated <- read_csv("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/analysis/annotated_burdens_DBS.csv")
+controls_stats <- filter(dbs_annotated, sample %in% control_names & patient=="PD57287")
+mean(controls_stats$dbs_calls)
+```
+
+Then calculate the genome DBS burden (DBS burden per base x diploid genome size in bp), and plot and test its distribution:
+
+```{r calculate genome burden}
+#add genome burden per sample
+controls_stats <- mutate(controls_stats, genome_dbs_burden = dbs_burden*6000000000)
+dbs_annotated <- mutate(dbs_annotated, genome_dbs_burden = dbs_burden*6000000000)
+#metadata <- left_join(metadata, genome_burden = burden*6000000000)
+
+#plot distribution of genome burdens - at some point do this across all patients
+genome_dbs_burden_plot <- ggplot(controls_stats, aes(genome_dbs_burden)) +
+  geom_boxplot() +
+  geom_dotplot(dotsize = 2, binwidth = 0.1) +
+  geom_text_repel(aes(y=0, label=treatment))
+
+genome_dbs_burden_plot # some 'outliers' - how different are the spectra? does this matter?
+
+#test distribution of genome burdens - is this even relevant? idk?
+shapiro.test(controls_stats$genome_burden)
+ks.test(controls_stats$genome_burden, "pnorm")   #not sure if this is working, always giving very low values?
+
+#Summary stats for controls
+control_summary_stats <- controls_stats %>%
+   dplyr::summarise(mean=mean(genome_dbs_burden), max=max(genome_dbs_burden), min=min(genome_dbs_burden), median=median(genome_dbs_burden), sd=sd(genome_dbs_burden), count=n())
+
+CI_table_controls <- as.data.table(controls_stats)[,as.list(CI(genome_dbs_burden))]
+control_summary_stats <-cbind(control_summary_stats, select(CI_table_controls,-c(mean)))
+
+#Summary stats per treatment group
+treatment_group_summary_stats <- dbs_annotated %>% filter(patient=="PD57287") %>%
+  dplyr::group_by(treatment) %>% dplyr::summarise(mean=mean(genome_dbs_burden), max=max(genome_dbs_burden), min=min(genome_dbs_burden), median=median(genome_dbs_burden), sd=sd(genome_dbs_burden), count=n())
+
+CI_table_treatments <- as.data.table(filter(dbs_annotated, patient=="PD57287"))[,as.list(CI(genome_dbs_burden)), by=treatment]
+treatment_group_summary_stats <-left_join(treatment_group_summary_stats, select(CI_table_treatments,-c(mean)),by="treatment")
+
+#Summary stats per custom group
+custom_group_summary_stats <- metadata %>% filter(group!="control" & patient=="PD44571") %>%
+  dplyr::group_by(tissue) %>% dplyr::summarise(mean=mean(genome_burden), max=max(genome_burden), min=min(genome_burden), median=median(genome_burden), sd=sd(genome_burden), count=n())
+
+CI_table_custom <- as.data.table(filter(metadata, group!="control" & patient=="PD44571"))[,as.list(CI(genome_burden)), by=tissue]
+custom_group_summary_stats <-left_join(custom_group_summary_stats, select(CI_table_custom,-c(mean)),by="tissue")
+
+```
+## Combine signature outputs
+
+We can now combine the output signatures into a table for downstream analysis.
+
+```{r generate sig table, message=FALSE}
+parent_dir <- "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/"
+org_line_dirs <- list.files(parent_dir, pattern = "PD")
+
+#init dataframe
+all_sigs <- as.data.frame(matrix(nrow = 96, ncol = 1))
+
+for (org_line in org_line_dirs){
+  sig_files_list <- list.files(paste0(parent_dir, org_line), pattern = ".txt")
+  for (file in sig_files_list) {
+    print(paste0(parent_dir, org_line, "/", file))
+    sig_file <- read_table(paste0(parent_dir, org_line, "/", file))
+    name <- paste0(str_split_i(file, "\\.", 1), "_", str_split_i(org_line, "_", -1))
+    print(name)
+    sig_file <- mutate(sig_file, norm_exposure=KO_exposure/sum(KO_exposure)) #normalise signature to sum to 1
+    all_sigs <- cbind(all_sigs, sig_file$norm_exposure) 
+    colnames(all_sigs)[length(colnames(all_sigs))] <- name
+  }
+}
+
+all_sigs[1] <- sig_file$MutationType
+colnames(all_sigs)[1] <- "MutationType"
+
+
+write_csv(all_sigs, "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/expsigfinder_20230127_all_sigs.csv")
+```
+
+
+
+## Next steps
+
+Make sure I understand the mathematical principles behind these calculations and exactly which numbers are being output in the summary table for each treatment group.
+
+Work out why some of the treatment groups are currently failing.
+
+Need to inspect the raw spectra for the different treatment groups to sanity check them and investigate things we noticed previously - e.g. evidence of APOBEC
+
+Needs implementing so that it runs for all organoid lines:
+  - Initial step: Look at the combined control spectra for all organoid lines - do they significantly differ? Do we have enough mutations per organoid line to calculate robust background spectra for each organoid line?
+  - Need to first do a check that none of the different controls is showing significant differences (e.g. NaCl vs. DMSO) - this analysis currently assumes no impact.
+
+Presumably there should be some step to see if the mean burden for a treatment group is significantly higher than the control? Following this, we want to determine whether the treatment spectrum is different from the control?
+  - First step needs to incorporate the diffs in effective coverage somehow ..
+
+Work out how to incorporate different concentrations, chronic treatments and e.g. +/- S9 into this analysis:
+ - Could test beforehand to see if the spectra differ and then decide whether to merge for the analysis or not?
+
+Downstream analysis to determining whether the resulting signatures are significantly different between:
+  - Treatment groups: e.g. cisplatin vs. carboplatin
+  - Organoid lines: e.g. bendamustine in PD41849 vs. bendamustine in PD41850
+  - Tissues of origin: e.g. is there evidence for a significant effect of tissue of origin, after accounting for the effect of donor of origin
+
+Improvements to the percentage plots?
+
+Error bars or other estimates of signature "confidence"?
+
+Once we have the final set of signatures:
+  - Comparison to COSMIC signatures and previous iPSC signatures - will probably attempt decomposition using sigfit.
+  - Compare to the results obtained using de novo extraction methods.
+  
+Implement for indels and DBS (although likely to be limited to very strong signatures due to lower mutation numbers).
+
+
+
+
+
