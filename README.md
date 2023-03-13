@@ -1,7 +1,11 @@
 # ExpSigfinder
-Find new mutational signatures from experiments
+Scripts for identifying mutational signatures from experimental datasets. This is a fork of xqzou/ExpSigfinder , using some of the underlying functionality.
+
+WIP - no guarantee any of this currently works
 
 ## Installation
+
+NB. this is to install the original repo, will update once i work out how to best implement
 
 ```{r, eval = FALSE}
 # Install the released version from Github
@@ -12,6 +16,8 @@ R CMD INSTALL .
 
 
 ## Example
+
+NB. this is an example of how one might run the original underlying code from the original repo, will update
 
 ```{r, eval = FALSE}
 # import the packages 
