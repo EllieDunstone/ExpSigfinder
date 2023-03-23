@@ -11,9 +11,9 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r packages, include=FALSE}
 ##load packages
+library(tidyverse)
 library(ExpSigfinder)
 library(Rmisc)
-library(tidyverse)
 library(ggrepel)
 library(data.table)
 ```
@@ -29,7 +29,7 @@ You only need to run this the first time to install the github package. If you n
 ```{r install expsigfinder}
 ##install package, only needed when running for the first time
 library(devtools)
-install_github("xqzou/ExpSigfinder")
+install_github("EllieDunstone/ExpSigfinder")
 ```
 
 ## Read in mutation matrix
@@ -44,7 +44,7 @@ If required, trim the sample names (sometimes these get output with the parent d
 
 ```{r trim sample names}
 #Trim sample IDs 
-colnames(mutation_matrix)[-1]<-str_sub(colnames(mutation_matrix),30,-1)[-1] #May need to alter the start position depending on input
+colnames(mutation_matrix)[-1] <- stringr::str_sub(colnames(mutation_matrix), 30, -1)[-1] #May need to alter the start position depending on input
 ```
 
 ## Read in metadata
@@ -64,7 +64,7 @@ Background needs to be calculated per organoid line, this chunk creates a mutati
 org_lines <- unique(metadata$patient) #grab all organoid line IDs
 
 for (org in org_lines) {
-  assign(paste0(org, "_mutation_matrix"), cbind(MutationType=mutation_matrix[,1], select(mutation_matrix, matches(org))))
+  assign(paste0(org, "_mutation_matrix"), cbind(MutationType = mutation_matrix[,1], dplyr::select(mutation_matrix, matches(org))))
 }
 
 ```
@@ -82,7 +82,7 @@ t_mutation_matrix <- t_mutation_matrix[-1,]
 t_mutation_matrix <- as.data.frame(cbind(rownames(t_mutation_matrix), t_mutation_matrix))
 colnames(t_mutation_matrix)[1] <- "sample"
 
-mutation_matrix_metadata <- left_join(t_mutation_matrix, select(metadata, sample, patient, tissue_sample, treatment, sample_name, concentration, tissue, group))
+mutation_matrix_metadata <- dplyr::left_join(t_mutation_matrix, dplyr::select(metadata, sample, patient, tissue_sample, treatment, sample_name, concentration, tissue, group))
 ```
 
 ## Calculate background
@@ -92,7 +92,7 @@ Calculate the means of control samples for each mutation type, and the overall m
 First, we identify the control samples:
 
 ```{r select controls}
-controls <- filter(mutation_matrix_metadata, group=="control")
+controls <- filter(mutation_matrix_metadata, group == "control")
 control_names <- controls$sample
 ```
 
@@ -124,7 +124,7 @@ print(bg_mean)
 #Note: Currently will not output plots to correct location - needs fixing
 
 #select appropriate samples by treatment group
-treatment_group <- filter(mutation_matrix_metadata, treatment=="thiotepa")
+treatment_group <- filter(mutation_matrix_metadata, treatment == "thiotepa")
 group_names <- treatment_group$sample
 
 # Make profile of treatment group samples with background removed (input sample names here)
