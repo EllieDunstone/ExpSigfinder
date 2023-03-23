@@ -1,0 +1,45 @@
+---
+title: "expsigfinder_mut_detection.Rmd"
+author: "Ellie Dunstone"
+date: "2023-03-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include=FALSE}
+##load packages
+library(tidyverse)
+```
+
+## Introduction 
+
+This is a script for identifying in vitro samples with a significantly higher mutation burden than corresponding control samples. It is designed for use with samples sequenced using NanoSeq.
+
+This script is part of ExpSigfinder (https://github.com/EllieDunstone/ExpSigfinder), based on functions written by Zoe Zou (2022). It should be run before the scripts for extracting signatures, in order to define the samples where there is evidence of significant mutation increase above the background. 
+
+## Read in mutation matrix
+
+Read in the mutation matrix (input your own path to file). This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
+
+```{r read matrix}
+mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/trint_subs_matrix_corrected.tsv", sep = "\t", header = T, as.is = T) 
+```
+
+If required, trim the sample names (sometimes these get output with the parent dir prefixed).
+
+```{r trim sample names}
+#Trim sample IDs 
+colnames(mutation_matrix)[-1] <- stringr::str_sub(colnames(mutation_matrix), 30, -1)[-1] #May need to alter the start position depending on input
+```
+
+## Read in metadata
+
+Read in table of metadata containing the treatment name, and a column 'group' indicating whether a sample is a control. Other metadata columns may be included if needed for later analysis.
+
+```{r read metadata}
+metadata <- read.table("/Users/ed4/Documents/phd/chemo_project/Metadata/WP4/wp4_sample_subsetting.csv", sep = ",", header = T, as.is = T)
+```
+
