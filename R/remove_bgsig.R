@@ -26,10 +26,13 @@ Wrap_KOSig <- function(MutCatalogue, bg_column, ko_column, sampling_number, star
 #' @export 
 RemoveBackground_vector_single <- function(background_profile, sig_profile, sampling_number, start_num, boundary = 2){
   
+  #Calculate number of mutation channels
+  nTypes <- length(sig_profile)
+  
   # Remove weak mutation types in sig_profile
   
   #set threshold value for weak mut types?
-  removeWeakMutationTypes <- 0.01     
+  removeWeakMutationTypes <- 0.01
   
   #calculate 1% of the total mutations in each channel ..?
   genomesOriginal <- as.data.frame(sig_profile) 
@@ -110,9 +113,9 @@ RemoveBackground_vector_single <- function(background_profile, sig_profile, samp
   }
   
   # Add Weak mutations for KO expoure
-  exposure <- rep(0, 96)
+  exposure <- rep(0, nTypes)
   origArrayIndex <- 1
-  for(i in 1:96) {
+  for(i in 1:nTypes) {
     if(! i %in% mutationTypesToRemoveSet) {
       exposure[i] <- diff_all_save[origArrayIndex]
       origArrayIndex = origArrayIndex + 1
@@ -120,9 +123,9 @@ RemoveBackground_vector_single <- function(background_profile, sig_profile, samp
   }
   
   # Add Weak mutations for background
-  background_exposure<- rep(0, 96)
+  background_exposure<- rep(0, nTypes)
   origArrayIndex <- 1
-  for(i in 1:96) {
+  for(i in 1:nTypes) {
     if(! i %in% mutationTypesToRemoveSet) {
       background_exposure[i] <- centroid_background[origArrayIndex]
       origArrayIndex = origArrayIndex + 1
