@@ -75,12 +75,11 @@ for (org in org_lines) {
 Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once? For now, select your organoid line first here:
 
 ```{r select org line}
-org <- "PD52489"
+org <- "PD57287"
 ```
 
 
 ```{r add metadata}
-
 t_mutation_matrix <- t(get(paste0(org, "_mutation_matrix")))
 colnames(t_mutation_matrix) <- t_mutation_matrix[1,]
 t_mutation_matrix <- t_mutation_matrix[-1,]
@@ -197,7 +196,7 @@ samples_of_interest
 However, you may also want to add or remove samples from this set manually:
 
 ```{r subset samples - manual}
-samples_of_interest <- cbind(filter(mutagenesis_table, sign_mutagenesis == "Y")$sample, c("your_sample", "another_one"))
+samples_of_interest <- c(filter(mutagenesis_table, sign_mutagenesis == "Y")$sample, c("your_sample", "another_one"))
 samples_of_interest
 ```
 
