@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/")
 ```
 
 ```{r packages, include=FALSE}

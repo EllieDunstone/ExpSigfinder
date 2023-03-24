@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r packages, include=FALSE}
 ##load packages
 library(tidyverse)
+library(NatParksPalettes) #Not essential, colour palette for plotting - other palette can be used
 ```
 
 ## Introduction 
@@ -22,7 +23,7 @@ This script is part of ExpSigfinder (https://github.com/EllieDunstone/ExpSigfind
 
 ## Read in mutation matrix
 
-Read in the mutation matrix (input your own path to file). This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
+Read in the mutation matrix. This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
 
 ```{r read matrix}
 mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/trint_subs_matrix_corrected.tsv", sep = "\t", header = T, as.is = T) 
@@ -35,6 +36,16 @@ If required, trim the sample names (sometimes these get output with the parent d
 colnames(mutation_matrix)[-1] <- stringr::str_sub(colnames(mutation_matrix), 30, -1)[-1] #May need to alter the start position depending on input
 ```
 
+
+## Read in the corrected mutation burden data
+
+Read in the corrected mutation burden data for identification of samples showing significant increase compared to the background.
+
+```{r read corrected burdens}
+burdens <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/results.mut_burden_all.tsv", sep = "\t", header = T, as.is = T) 
+```
+
+
 ## Read in metadata
 
 Read in table of metadata containing the treatment name, and a column 'group' indicating whether a sample is a control. Other metadata columns may be included if needed for later analysis.
@@ -43,3 +54,117 @@ Read in table of metadata containing the treatment name, and a column 'group' in
 metadata <- read.table("/Users/ed4/Documents/phd/chemo_project/Metadata/WP4/wp4_sample_subsetting.csv", sep = ",", header = T, as.is = T)
 ```
 
+
+## Subset per organoid line
+
+Background needs to be calculated per organoid line, this chunk creates a mutation matrix for each line.
+
+```{r subset matrix per donor}
+org_lines <- unique(metadata$patient) #grab all organoid line IDs
+
+for (org in org_lines) {
+  assign(paste0(org, "_mutation_matrix"), cbind(MutationType = mutation_matrix[,1], dplyr::select(mutation_matrix, matches(org))))
+}
+```
+
+## Add metadata
+
+Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once?
+
+```{r add metadata}
+
+t_mutation_matrix <- t(PD41849_mutation_matrix)
+colnames(t_mutation_matrix) <- t_mutation_matrix[1,]
+t_mutation_matrix <- t_mutation_matrix[-1,]
+t_mutation_matrix <- as.data.frame(cbind(rownames(t_mutation_matrix), t_mutation_matrix))
+colnames(t_mutation_matrix)[1] <- "sample"
+
+mutation_matrix_metadata <- dplyr::left_join(t_mutation_matrix, dplyr::select(metadata, sample, patient, tissue_sample, treatment, sample_name, concentration, tissue, group))
+```
+
+```{r append burdens}
+mutation_matrix_metadata_burdens <- left_join(mutation_matrix_metadata, burdens)
+```
+
+## Calculate distribution of burdens for controls
+
+Calculate the means of control samples for each mutation type, and the overall mean burden.
+
+First, we identify the control samples:
+
+```{r select controls}
+controls <- filter(mutation_matrix_metadata_burdens, group == "control")
+control_names <- controls$sample
+```
+
+Plot the distribution of the control burdens:
+
+```{r plot control burdens}
+control_burdens_plot <- ggplot(controls, aes(reorder(sample_name, burden), burden, fill = treatment)) +
+  geom_col() +
+  geom_linerange(aes(x = sample_name, ymin = burden_lci, ymax = burden_uci)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("Sample") +
+  ylab("SBS burden per bp") + 
+  facet_grid(~treatment, scales = "free") +
+  scale_fill_manual(values = natparks.pals("Yellowstone", n = length(unique(controls$treatment))))
+  
+control_burdens_plot
+```
+
+Do we want to add any formal statistical test here? We have effectively the sample burdens, and upper and lower confidence intervals. For some pairs, the confidence intervals don't quite overlap, but there certainly doesn't look like there is any systematic difference so this is broadly unconcerning? (For PD41849)
+
+If there is no evidence of meaningful differences between the control samples, they can be treated as replicates of the control/background burden and spectrum. 
+
+We now calculate the mean background mutation count and spectrum using these samples.
+
+```{r calculate background counts and spectrum}
+#calculate mean counts of each mutation type across all control samples
+PD41849_mutation_matrix <- PD41849_mutation_matrix %>%
+  mutate(bg_profile = rowMeans(PD41849_mutation_matrix[,control_names]))
+
+#calculate mean total mutation count across all control samples
+bg_mean_count <- sum(PD41849_mutation_matrix$bg_profile)
+print(bg_mean_count)
+```
+
+We now want to calculate the mean and confidence interval of corrected burdens for the controls.
+
+```{r calculate background burden mean and CI}
+#Summary stats for bg burdens
+bg_summary_stats <- metadata %>% filter(sample %in% control_names & patient=="PD41849") %>% dplyr::group_by(group) %>%
+   dplyr::summarise(mean = mean(burden), max = max(burden), min = min(burden), median = median(burden), sd = sd(burden), count = n())
+
+#Add 95% CIs to bg burden summary stats
+bg_CI_table <- as.data.table(filter(metadata, sample %in% control_names & patient == "PD41849"))[,as.list(CI(burden)), by = group]
+bg_summary_stats <-left_join(bg_summary_stats, select(bg_CI_table, -c(mean)), by = "group")
+```
+
+
+#Identify samples with significantly increased burdens
+
+We can now use these values to identify which individual samples show evidence of significant increase in burden.
+
+First, we can plot the same plot as above with the control distributions, but adding the samples for each treatment to visually inspect each group for evidence of increased burden.
+
+```{r plot control burdens alongside treatment}
+
+#generate list of all non-control treatments
+treatment_list <- unique(filter(mutation_matrix_metadata_burdens, group != "control")$treatment)
+
+for (i in treatment_list) {
+  control_v_treatment_burdens_plot <- ggplot(filter(mutation_matrix_metadata_burdens, patient == "PD41849" & (group == "control" | treatment == i)), aes(reorder(sample_name, -burden), burden, fill = group)) + geom_col() +
+  geom_linerange(aes(x = sample_name, ymin = burden_lci, ymax = burden_uci)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("Sample") +
+  ylab("SBS burden per bp") + 
+  facet_grid(~treatment, scales = "free") +
+  scale_fill_manual(values = natparks.pals("Volcanoes", n = 2))
+  
+ggsave()
+}
+
+
+```
