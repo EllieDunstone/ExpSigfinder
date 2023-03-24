@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230324_expsigfinder_SBS96/")
 ```
 
 ```{r packages, include=FALSE}
@@ -69,11 +70,16 @@ for (org in org_lines) {
 
 ## Add metadata
 
-Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once?
+Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once? For now, select your organoid line first here:
+
+```{r select org line}
+org <- "PD41850"
+```
+
 
 ```{r add metadata}
 
-t_mutation_matrix <- t(PD41849_mutation_matrix)
+t_mutation_matrix <- t(get(paste0(org, "_mutation_matrix")))
 colnames(t_mutation_matrix) <- t_mutation_matrix[1,]
 t_mutation_matrix <- t_mutation_matrix[-1,]
 t_mutation_matrix <- as.data.frame(cbind(rownames(t_mutation_matrix), t_mutation_matrix))
@@ -156,15 +162,76 @@ treatment_list <- unique(filter(mutation_matrix_metadata_burdens, group != "cont
 for (i in treatment_list) {
   control_v_treatment_burdens_plot <- ggplot(filter(mutation_matrix_metadata_burdens, patient == "PD41849" & (group == "control" | treatment == i)), aes(reorder(sample_name, -burden), burden, fill = group)) + geom_col() +
   geom_linerange(aes(x = sample_name, ymin = burden_lci, ymax = burden_uci)) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), strip.text.x = element_text(angle = 90)) +
   xlab("Sample") +
   ylab("SBS burden per bp") + 
+  labs(title = paste0("Control 95% CI: ", signif(bg_summary_stats$lower, 3), " - ", signif(bg_summary_stats$upper, 3))) +
+  #annotate(geom = "text", x = 0, y = max(filter(mutation_matrix_metadata_burdens, patient == "PD41849" & (group == "control"| treatment == i))$burden_uci), label = paste0("Control 95% CI: ", bg_summary_stats$lower, " - ", bg_summary_stats$upper), nudge_y = 0.1, data = filter(mutation_matrix_metadata_burdens, treatment == i), size = 3, hjust = 0) +
   facet_grid(~treatment, scales = "free") +
   scale_fill_manual(values = natparks.pals("Volcanoes", n = 2))
   
-ggsave()
+ggsave(paste0("PD41849_controls_v_", i, ".png"))
 }
 
 
 ```
+
+We also want to output these results to a table.
+
+We can add whether there is evidence of significant excess mutagenesis in each sample.
+
+The sign_mutagenesis column will be 'Y' if the burden is significantly higher than the background, 'N' if it lies within the 95% CI of the background, and 'low' if significantly lower. 'Low' results are unusual, as the treatment should not significantly decrease the burden! Some borderline 'low' results may represent some experimental variation, but large apparent decreases should be investigated further for sources of error.
+
+```{r generate table of mutagenesis results}
+#select data from current table
+mutagenesis_table <- select(mutation_matrix_metadata_burdens, sample, patient, tissue_sample, treatment, sample_name, concentration, tissue, group, muts, total, burden, burden_lci, burden_uci)
+
+#add bg summary stats
+mutagenesis_table <- mutagenesis_table %>% mutate(bg_burden_mean = bg_summary_stats$mean) %>% mutate(bg_burden_lci = bg_summary_stats$lower) %>% mutate(bg_burden_uci = bg_summary_stats$upper)
+
+#add whether sample CI overlaps bg CI - 'Y' if higher, 'N' if within bg CI, low if below bg CI - if this occurs this is odd and should be investigated
+mutagenesis_table <- mutagenesis_table %>% mutate(sign_mutagenesis = case_when(burden_lci >= bg_burden_uci ~ "Y", (burden_lci < bg_burden_uci) & (burden_uci >= bg_burden_lci) ~ "N", TRUE ~ "low" ))
+
+```
+
+
+# Identifying samples of interest
+
+The simplest way to identify samples of interest is by simply looking at all samples that show a significant increase:
+
+```{r subset samples - sign increase}
+samples_of_interest <- filter(mutagenesis_table, sign_mutagenesis == "Y")$sample
+samples_of_interest
+```
+
+However, you may also want to add or remove samples from this set manually:
+
+```{r subset samples - manual}
+samples_of_interest <- cbind(filter(mutagenesis_table, sign_mutagenesis == "Y")$sample, c("your_sample", "another_one"))
+samples_of_interest
+```
+
+
+We can now generate a data table for your samples of interest:
+
+```{r data table samples of interest}
+data_samples_of_interest <- filter(mutation_matrix_metadata_burdens, sample %in% samples_of_interest)
+```
+
+And also inspect the other samples that did not show significant mutagenesis:
+
+```{r data table samples of interest}
+data_dropped_samples <- filter(mutation_matrix_metadata_burdens, !(sample %in% samples_of_interest))
+```
+
+
+# Output tables
+
+We can now output these tables for use downstream:
+
+```{r output data tables}
+write_csv(data_samples_of_interest, paste0(org, "_data_samples_of_interest.csv"))
+write_csv(data_dropped_samples, paste0(org, "_data_dropped_samples.csv"))
+```
+
