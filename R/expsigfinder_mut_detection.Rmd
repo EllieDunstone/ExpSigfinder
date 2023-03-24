@@ -13,6 +13,8 @@ knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/W
 ```{r packages, include=FALSE}
 ##load packages
 library(tidyverse)
+library(Rmisc)
+library(data.table)
 library(NatParksPalettes) #Not essential, colour palette for plotting - other palette can be used
 ```
 
@@ -73,7 +75,7 @@ for (org in org_lines) {
 Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once? For now, select your organoid line first here:
 
 ```{r select org line}
-org <- "PD41850"
+org <- "PD52489"
 ```
 
 
@@ -119,31 +121,19 @@ control_burdens_plot <- ggplot(controls, aes(reorder(sample_name, burden), burde
 control_burdens_plot
 ```
 
-Do we want to add any formal statistical test here? We have effectively the sample burdens, and upper and lower confidence intervals. For some pairs, the confidence intervals don't quite overlap, but there certainly doesn't look like there is any systematic difference so this is broadly unconcerning? (For PD41849)
+Do we want to add any formal statistical test here? We have effectively the sample burdens, and upper and lower confidence intervals. For some pairs, the confidence intervals don't quite overlap, but there still may not be anything overly concerning going on?
 
-If there is no evidence of meaningful differences between the control samples, they can be treated as replicates of the control/background burden and spectrum. 
-
-We now calculate the mean background mutation count and spectrum using these samples.
-
-```{r calculate background counts and spectrum}
-#calculate mean counts of each mutation type across all control samples
-PD41849_mutation_matrix <- PD41849_mutation_matrix %>%
-  mutate(bg_profile = rowMeans(PD41849_mutation_matrix[,control_names]))
-
-#calculate mean total mutation count across all control samples
-bg_mean_count <- sum(PD41849_mutation_matrix$bg_profile)
-print(bg_mean_count)
-```
+If there is no evidence of meaningful differences between the control samples, they can be treated as replicates of the control.
 
 We now want to calculate the mean and confidence interval of corrected burdens for the controls.
 
 ```{r calculate background burden mean and CI}
 #Summary stats for bg burdens
-bg_summary_stats <- metadata %>% filter(sample %in% control_names & patient=="PD41849") %>% dplyr::group_by(group) %>%
+bg_summary_stats <- metadata %>% filter(sample %in% control_names & patient==org) %>% dplyr::group_by(group) %>%
    dplyr::summarise(mean = mean(burden), max = max(burden), min = min(burden), median = median(burden), sd = sd(burden), count = n())
 
 #Add 95% CIs to bg burden summary stats
-bg_CI_table <- as.data.table(filter(metadata, sample %in% control_names & patient == "PD41849"))[,as.list(CI(burden)), by = group]
+bg_CI_table <- as.data.table(filter(metadata, sample %in% control_names & patient == org))[,as.list(CI(burden)), by = group]
 bg_summary_stats <-left_join(bg_summary_stats, select(bg_CI_table, -c(mean)), by = "group")
 ```
 
@@ -160,18 +150,17 @@ First, we can plot the same plot as above with the control distributions, but ad
 treatment_list <- unique(filter(mutation_matrix_metadata_burdens, group != "control")$treatment)
 
 for (i in treatment_list) {
-  control_v_treatment_burdens_plot <- ggplot(filter(mutation_matrix_metadata_burdens, patient == "PD41849" & (group == "control" | treatment == i)), aes(reorder(sample_name, -burden), burden, fill = group)) + geom_col() +
+  control_v_treatment_burdens_plot <- ggplot(filter(mutation_matrix_metadata_burdens, patient == org & (group == "control" | treatment == i)), aes(reorder(sample_name, -burden), burden, fill = group)) + geom_col() +
   geom_linerange(aes(x = sample_name, ymin = burden_lci, ymax = burden_uci)) +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), strip.text.x = element_text(angle = 90)) +
   xlab("Sample") +
   ylab("SBS burden per bp") + 
   labs(title = paste0("Control 95% CI: ", signif(bg_summary_stats$lower, 3), " - ", signif(bg_summary_stats$upper, 3))) +
-  #annotate(geom = "text", x = 0, y = max(filter(mutation_matrix_metadata_burdens, patient == "PD41849" & (group == "control"| treatment == i))$burden_uci), label = paste0("Control 95% CI: ", bg_summary_stats$lower, " - ", bg_summary_stats$upper), nudge_y = 0.1, data = filter(mutation_matrix_metadata_burdens, treatment == i), size = 3, hjust = 0) +
   facet_grid(~treatment, scales = "free") +
   scale_fill_manual(values = natparks.pals("Volcanoes", n = 2))
   
-ggsave(paste0("PD41849_controls_v_", i, ".png"))
+ggsave(paste0(org, "_controls_v_", i, ".png"))
 }
 
 
@@ -233,5 +222,6 @@ We can now output these tables for use downstream:
 ```{r output data tables}
 write_csv(data_samples_of_interest, paste0(org, "_data_samples_of_interest.csv"))
 write_csv(data_dropped_samples, paste0(org, "_data_dropped_samples.csv"))
+write_csv(mutagenesis_table, paste0(org, "_mutagenesis_table.csv"))
 ```
 
