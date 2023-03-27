@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/")
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230324_expsigfinder_SBS96/")
 ```
 
 ```{r packages, include=FALSE}
@@ -38,7 +38,7 @@ install_github("EllieDunstone/ExpSigfinder")
 Read in the mutation matrix (input your own path to file). This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
 
 ```{r read matrix}
-mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/trint_subs_matrix_corrected.tsv", sep = "\t", header = T, as.is = T) 
+mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230324_expsigfinder_SBS96/sign_mutation_matrix_coverage_corrected.csv", sep = ",", header = T, as.is = T) 
 ```
 
 If required, trim the sample names (sometimes these get output with the parent dir prefixed).
@@ -73,11 +73,17 @@ for (org in org_lines) {
 
 ## Add metadata
 
+Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once? For now, select your organoid line first here:
+
+```{r select org line}
+org <- "PD41849"
+```
+
 Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once?
 
 ```{r add metadata}
 
-t_mutation_matrix <- t(PD41849_mutation_matrix)
+t_mutation_matrix <- t(get(paste0(org, "_mutation_matrix")))
 colnames(t_mutation_matrix) <- t_mutation_matrix[1,]
 t_mutation_matrix <- t_mutation_matrix[-1,]
 t_mutation_matrix <- as.data.frame(cbind(rownames(t_mutation_matrix), t_mutation_matrix))
@@ -199,6 +205,34 @@ for (i in custom_groups) {
 
 ```
 
+Or for individual samples:
+
+```{r calculate and plot profiles for all samples individually}
+
+#Generate list of non-control sample names
+non_control_samples <- filter(mutation_matrix_metadata, group != "control")$sample
+
+#Run calculation and plotting for each sample
+for (i in non_control_samples) {
+  print(paste0("Analysing sample: ", i))
+  
+  #select appropriate samples by treatment group
+  # treatment_group <- filter(mutation_matrix_metadata, treatment==i)
+  # group_names <- treatment_group$sample
+  # print(paste0(group_names))
+  
+  # Make profile of sample with background removed - skip and print error if one sample fails
+  tryCatch({
+    Wrap_KOSig(PD41849_mutation_matrix, "bg_profile", group_names, 100, bg_mean, 2, i)
+    sig <- read.table(paste0(i,".txt"), sep = "\t", header = T, as.is = T)
+    plotCountbasis(sig, 1, 6, 9, paste0(i, ".pdf"))
+    plotPercentagebasis(sig, 1, 6, 9, paste0(i, "_percentage.pdf"))}, error=function(e){cat(paste0("ERROR for treatment group ", i, ": "),conditionMessage(e), "\n")})
+}
+
+```
+
+
+
 
 ## Calculate mean burden per genome and confidence intervals for control
 
@@ -249,6 +283,7 @@ CI_table_custom <- as.data.table(filter(metadata, group!="control" & patient=="P
 custom_group_summary_stats <-left_join(custom_group_summary_stats, select(CI_table_custom,-c(mean)),by="tissue")
 
 ```
+
 ## Combine signature outputs
 
 We can now combine the output signatures into a table for downstream analysis.
