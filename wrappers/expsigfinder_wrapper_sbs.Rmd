@@ -1,5 +1,5 @@
 ---
-title: "ExpSigfinder wrapper"
+title: "ExpSigfinder wrapper SBS"
 author: "Ellie Dunstone"
 date: "15/12/2022"
 output: html_document
@@ -14,6 +14,7 @@ knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/W
 ##load packages
 library(tidyverse)
 library(ExpSigfinder)
+#library(ExpSigfinder-nano)
 library(Rmisc)
 library(ggrepel)
 library(data.table)
@@ -21,7 +22,7 @@ library(data.table)
 
 ## Introduction 
 
-This is a script to implement ExpSigfinder (https://github.com/xqzou/ExpSigfinder), based on functions written by Zoe Zou (2022).
+This is a script to implement ExpSigfinder-nano (https://github.com/EllieDunstone/ExpSigfinder-nano), based on functions written by Zoe Zou (https://github.com/xqzou/ExpSigfinder). These scripts are for analysing experimental mutational signature data from in vitro models sequenced using the NanoSeq protocol (Abascal et al., 2021). 
 
 ## Install package
 
@@ -30,12 +31,13 @@ You only need to run this the first time to install the github package. If you n
 ```{r install expsigfinder}
 ##install package, only needed when running for the first time
 library(devtools)
-install_github("EllieDunstone/ExpSigfinder")
+install_github("xqzou/ExpSigfinder")
+#install_github("EllieDunstone/ExpSigfinder-nano")
 ```
 
 ## Read in mutation matrix
 
-Read in the mutation matrix (input your own path to file). This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
+Read in the mutation matrix (input your own path to file). This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values. This matrix should contain samples with evidence of a significant increase in mutagenesis compared to the control samples (see expsigfinder_mut_detection.Rmd) plus the control samples, and be corrected for duplex coverage (see expsigfinder_matrix_correction.Rmd).
 
 ```{r read matrix}
 mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230324_expsigfinder_SBS96/sign_mutation_matrix_coverage_corrected.csv", sep = ",", header = T, as.is = T) 
@@ -223,7 +225,7 @@ for (i in non_control_samples) {
   
   # Make profile of sample with background removed - skip and print error if one sample fails
   tryCatch({
-    Wrap_KOSig(PD41849_mutation_matrix, "bg_profile", group_names, 100, bg_mean, 2, i)
+    Wrap_KOSig(PD41849_mutation_matrix, "bg_profile", i, 100, bg_mean, 2, i)
     sig <- read.table(paste0(i,".txt"), sep = "\t", header = T, as.is = T)
     plotCountbasis(sig, 1, 6, 9, paste0(i, ".pdf"))
     plotPercentagebasis(sig, 1, 6, 9, paste0(i, "_percentage.pdf"))}, error=function(e){cat(paste0("ERROR for treatment group ", i, ": "),conditionMessage(e), "\n")})
@@ -325,10 +327,9 @@ Work out why some of the treatment groups are currently failing.
 
 Needs implementing so that it runs for all organoid lines:
   - Initial step: Look at the combined control spectra for all organoid lines - do they significantly differ? Do we have enough mutations per organoid line to calculate robust background spectra for each organoid line?
-  - Need to first do a check that none of the different controls is showing significant differences (e.g. NaCl vs. DMSO) - this analysis currently assumes no impact.
 
-Presumably there should be some step to see if the mean burden for a treatment group is significantly higher than the control? Following this, we want to determine whether the treatment spectrum is different from the control?
-  - First step needs to incorporate the diffs in effective coverage somehow ..
+determine whether the treatment spectrum is different from the control?
+  - needs to incorporate the diffs in effective coverage somehow ..
 
 Work out how to incorporate different concentrations, chronic treatments and e.g. +/- S9 into this analysis:
  - Could test beforehand to see if the spectra differ and then decide whether to merge for the analysis or not?

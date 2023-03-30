@@ -1,0 +1,250 @@
+---
+title: "ExpSigfinder mut detection - indels"
+author: "Ellie Dunstone"
+date: "2023-03-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230330_expsigfinder_ID83/")
+```
+
+```{r packages, include=FALSE}
+##load packages
+library(tidyverse)
+library(Rmisc)
+library(data.table)
+library(NatParksPalettes) #Not essential, colour palette for plotting - other palette can be used
+```
+
+## Introduction 
+
+This is a script for identifying in vitro samples with a significantly higher mutation burden than corresponding control samples. It is designed for use with samples sequenced using NanoSeq.
+
+This script is part of ExpSigfinder (https://github.com/EllieDunstone/ExpSigfinder), based on functions written by Zoe Zou (2022). It should be run before the scripts for extracting signatures, in order to define the samples where there is evidence of significant mutation increase above the background. 
+
+## Read in mutation matrix
+
+Read in the indel mutation matrix. This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
+
+```{r read matrix}
+mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/indels.ID83.all.tsv", sep = "\t", header = T, as.is = T) 
+```
+
+If required, trim the sample names (sometimes these get output with the parent dir prefixed).
+
+```{r trim sample names}
+#Trim sample IDs 
+colnames(mutation_matrix)[-1] <- stringr::str_sub(colnames(mutation_matrix), 30, -1)[-1] #May need to alter the start position depending on input
+```
+
+
+## Read in the corrected SBS mutation burden data
+
+Read in the corrected SBS mutation burden data for identification of samples showing significant increase compared to the background - this data is needed for calculation of the indel burdens.
+
+```{r read corrected sbs burdens}
+burdens <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/results.mut_burden_all.tsv", sep = "\t", header = T, as.is = T) 
+```
+
+## Calculate the indel burdens
+
+We can now calculate the indel burdens per base pair using the total number of indels called per sample and the total base calls from the SBS burdens table.
+
+```{r calculate indel burdens}
+indel_burdens <- cbind(colnames(mutation_matrix)[-1], colSums(mutation_matrix[,-1]))
+colnames(indel_burdens) <- c("sample", "indel_burden")
+burdens <- left_join(burdens, indel_burdens, copy = TRUE)
+```
+
+We can also calculate the 95% confidence intervals for these burdens as follows:
+
+```{r calculate indel burden CIs}
+# Add confidence intervals:
+ci = poisson.test(sum(trint_subst_obs))$conf.int[1:2]
+#ci = binom.wilson(sum(trint_subst_obs),sum(trint_bg))[,c("lower","upper")]
+burdens["observed", "burden_lci"] = ci[1] / sum(trint_bg)
+burdens["observed", "burden_uci"] = ci[2] / sum(trint_bg)
+ci_corrected = ci * correction_factor
+#ci = binom.wilson(burdens["corrected","muts"],burdens["corrected","total"])[,c("lower","upper")]
+burdens["corrected", "burden_lci"] = ci_corrected[1] / sum(trint_bg)
+burdens["corrected", "burden_uci"] = ci_corrected[2] / sum(trint_bg)
+```
+
+
+## Read in metadata
+
+Read in table of metadata containing the treatment name, and a column 'group' indicating whether a sample is a control. Other metadata columns may be included if needed for later analysis.
+
+```{r read metadata}
+metadata <- read.table("/Users/ed4/Documents/phd/chemo_project/Metadata/WP4/wp4_sample_subsetting.csv", sep = ",", header = T, as.is = T)
+```
+
+
+## Subset per organoid line
+
+Background needs to be calculated per organoid line, this chunk creates a mutation matrix for each line.
+
+```{r subset matrix per donor}
+org_lines <- unique(metadata$patient) #grab all organoid line IDs
+
+for (org in org_lines) {
+  assign(paste0(org, "_mutation_matrix"), cbind(MutationType = mutation_matrix[,1], dplyr::select(mutation_matrix, matches(org))))
+}
+```
+
+## Add metadata
+
+Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once? For now, select your organoid line first here:
+
+```{r select org line}
+org <- "PD57287"
+```
+
+
+```{r add metadata}
+t_mutation_matrix <- t(get(paste0(org, "_mutation_matrix")))
+colnames(t_mutation_matrix) <- t_mutation_matrix[1,]
+t_mutation_matrix <- t_mutation_matrix[-1,]
+t_mutation_matrix <- as.data.frame(cbind(rownames(t_mutation_matrix), t_mutation_matrix))
+colnames(t_mutation_matrix)[1] <- "sample"
+
+mutation_matrix_metadata <- dplyr::left_join(t_mutation_matrix, dplyr::select(metadata, sample, patient, tissue_sample, treatment, sample_name, concentration, tissue, group))
+```
+
+```{r append burdens}
+mutation_matrix_metadata_burdens <- left_join(mutation_matrix_metadata, burdens)
+```
+
+## Calculate distribution of burdens for controls
+
+Calculate the means of control samples for each mutation type, and the overall mean burden.
+
+First, we identify the control samples:
+
+```{r select controls}
+controls <- filter(mutation_matrix_metadata_burdens, group == "control")
+control_names <- controls$sample
+```
+
+Plot the distribution of the control burdens:
+
+```{r plot control burdens}
+control_burdens_plot <- ggplot(controls, aes(reorder(sample_name, burden), burden, fill = treatment)) +
+  geom_col() +
+  geom_linerange(aes(x = sample_name, ymin = burden_lci, ymax = burden_uci)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("Sample") +
+  ylab("SBS burden per bp") + 
+  facet_grid(~treatment, scales = "free") +
+  scale_fill_manual(values = natparks.pals("Yellowstone", n = length(unique(controls$treatment))))
+  
+control_burdens_plot
+```
+
+Do we want to add any formal statistical test here? We have effectively the sample burdens, and upper and lower confidence intervals. For some pairs, the confidence intervals don't quite overlap, but there still may not be anything overly concerning going on?
+
+If there is no evidence of meaningful differences between the control samples, they can be treated as replicates of the control.
+
+We now want to calculate the mean and confidence interval of corrected burdens for the controls.
+
+```{r calculate background burden mean and CI}
+#Summary stats for bg burdens
+bg_summary_stats <- metadata %>% filter(sample %in% control_names & patient==org) %>% dplyr::group_by(group) %>%
+   dplyr::summarise(mean = mean(burden), max = max(burden), min = min(burden), median = median(burden), sd = sd(burden), count = n())
+
+#Add 95% CIs to bg burden summary stats
+bg_CI_table <- as.data.table(filter(metadata, sample %in% control_names & patient == org))[,as.list(CI(burden)), by = group]
+bg_summary_stats <-left_join(bg_summary_stats, select(bg_CI_table, -c(mean)), by = "group")
+```
+
+
+#Identify samples with significantly increased burdens
+
+We can now use these values to identify which individual samples show evidence of significant increase in burden.
+
+First, we can plot the same plot as above with the control distributions, but adding the samples for each treatment to visually inspect each group for evidence of increased burden.
+
+```{r plot control burdens alongside treatment}
+
+#generate list of all non-control treatments
+treatment_list <- unique(filter(mutation_matrix_metadata_burdens, group != "control")$treatment)
+
+for (i in treatment_list) {
+  control_v_treatment_burdens_plot <- ggplot(filter(mutation_matrix_metadata_burdens, patient == org & (group == "control" | treatment == i)), aes(reorder(sample_name, -burden), burden, fill = group)) + geom_col() +
+  geom_linerange(aes(x = sample_name, ymin = burden_lci, ymax = burden_uci)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), strip.text.x = element_text(angle = 90)) +
+  xlab("Sample") +
+  ylab("SBS burden per bp") + 
+  labs(title = paste0("Control 95% CI: ", signif(bg_summary_stats$lower, 3), " - ", signif(bg_summary_stats$upper, 3))) +
+  facet_grid(~treatment, scales = "free") +
+  scale_fill_manual(values = natparks.pals("Volcanoes", n = 2))
+  
+ggsave(paste0(org, "_controls_v_", i, ".png"))
+}
+
+
+```
+
+We also want to output these results to a table.
+
+We can add whether there is evidence of significant excess mutagenesis in each sample.
+
+The sign_mutagenesis column will be 'Y' if the burden is significantly higher than the background, 'N' if it lies within the 95% CI of the background, and 'low' if significantly lower. 'Low' results are unusual, as the treatment should not significantly decrease the burden! Some borderline 'low' results may represent some experimental variation, but large apparent decreases should be investigated further for sources of error.
+
+```{r generate table of mutagenesis results}
+#select data from current table
+mutagenesis_table <- select(mutation_matrix_metadata_burdens, sample, patient, tissue_sample, treatment, sample_name, concentration, tissue, group, muts, total, burden, burden_lci, burden_uci)
+
+#add bg summary stats
+mutagenesis_table <- mutagenesis_table %>% mutate(bg_burden_mean = bg_summary_stats$mean) %>% mutate(bg_burden_lci = bg_summary_stats$lower) %>% mutate(bg_burden_uci = bg_summary_stats$upper)
+
+#add whether sample CI overlaps bg CI - 'Y' if higher, 'N' if within bg CI, low if below bg CI - if this occurs this is odd and should be investigated
+mutagenesis_table <- mutagenesis_table %>% mutate(sign_mutagenesis = case_when(burden_lci >= bg_burden_uci ~ "Y", (burden_lci < bg_burden_uci) & (burden_uci >= bg_burden_lci) ~ "N", TRUE ~ "low" ))
+
+```
+
+
+# Identifying samples of interest
+
+The simplest way to identify samples of interest is by simply looking at all samples that show a significant increase:
+
+```{r subset samples - sign increase}
+samples_of_interest <- filter(mutagenesis_table, sign_mutagenesis == "Y")$sample
+samples_of_interest
+```
+
+However, you may also want to add or remove samples from this set manually:
+
+```{r subset samples - manual}
+samples_of_interest <- c(filter(mutagenesis_table, sign_mutagenesis == "Y")$sample, c("your_sample", "another_one"))
+samples_of_interest
+```
+
+
+We can now generate a data table for your samples of interest:
+
+```{r data table samples of interest}
+data_samples_of_interest <- filter(mutation_matrix_metadata_burdens, sample %in% samples_of_interest)
+```
+
+And also inspect the other samples that did not show significant mutagenesis:
+
+```{r data table samples of interest}
+data_dropped_samples <- filter(mutation_matrix_metadata_burdens, !(sample %in% samples_of_interest))
+```
+
+
+# Output tables
+
+We can now output these tables for use downstream:
+
+```{r output data tables}
+write_csv(data_samples_of_interest, paste0(org, "_data_samples_of_interest.csv"))
+write_csv(data_dropped_samples, paste0(org, "_data_dropped_samples.csv"))
+write_csv(mutagenesis_table, paste0(org, "_mutagenesis_table.csv"))
+```
+

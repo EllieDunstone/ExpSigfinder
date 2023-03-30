@@ -19,7 +19,7 @@ library(tidyverse)
 
 This is a script for taking a mutation matrix generated from NanoSeq sequencing of samples exposed to mutagens in vitro, subsetting it for samples that show significantly increased mutagenesis compared to control (as identified by expsigfinder_mut_detection.Rmd), and then correcting it to account for variation in duplex coverage.
 
-This script is part of ExpSigfinder (https://github.com/EllieDunstone/ExpSigfinder), based on functions written by Zoe Zou (2022). It should be run before the scripts for extracting signatures, in order to correct the input matrix.
+This script is part of ExpSigfinder-nano (https://github.com/EllieDunstone/ExpSigfinder-nano), based on functions written by Zoe Zou (https://github.com/xqzou/ExpSigfinder). It should be run before the scripts for extracting signatures, in order to correct the input matrix.
 
 
 ## Read in uncorrected mutation matrix
@@ -114,7 +114,7 @@ total_mut_calls_hist <- ggplot(mut_matrix_calcs_table, aes(x = total_muts)) +
 total_mut_calls_hist
 ```
 
-We can set a threshold below which to drop samples - these samples have evidence for excess mutagenesis, but insufficient raw mutation calls to assess the signature.
+We can set a threshold below which to drop samples - these samples may have evidence for excess mutagenesis, but insufficient raw mutation calls to assess the signature. Note: should this be changed to prevent dropping of any controls?
 
 ```{r drop low mut calls}
 #identify samples below threshold and drop from calculation table, output dropped samples
