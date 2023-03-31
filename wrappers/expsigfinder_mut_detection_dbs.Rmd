@@ -1,13 +1,13 @@
 ---
-title: "ExpSigfinder mut detection - indels"
+title: "ExpSigfinder mut detection - DBS"
 author: "Ellie Dunstone"
-date: "2023-03-27"
+date: "2023-03-31"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230330_expsigfinder_ID83/")
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230331_expsigfinder_DBS78/")
 ```
 
 ```{r packages, include=FALSE}
