@@ -26,10 +26,10 @@ This script is part of ExpSigfinder (https://github.com/EllieDunstone/ExpSigfind
 
 ## Read in mutation matrix
 
-Read in the indel mutation matrix. This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
+Read in the DBS mutation matrix. This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
 
 ```{r read matrix}
-mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/indels.ID83.all.tsv", sep = "\t", header = T, as.is = T) 
+mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/dbs_mutation_matrix.tsv", sep = "\t", header = T, as.is = T) 
 ```
 
 If required, trim the sample names (sometimes these get output with the parent dir prefixed).
@@ -42,43 +42,47 @@ colnames(mutation_matrix)[-1] <- stringr::str_sub(colnames(mutation_matrix), 30,
 
 ## Read in the corrected SBS mutation burden data
 
-Read in the corrected SBS mutation burden data for identification of samples showing significant increase compared to the background - this data is needed for calculation of the indel burdens.
+Read in the corrected SBS mutation burden data for identification of samples showing significant increase compared to the background - this data is needed for calculation of the DBS burdens.
 
 ```{r read corrected sbs burdens}
 burdens <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/results.mut_burden_all.tsv", sep = "\t", header = T, as.is = T) 
 ```
 
-## Calculate the indel burdens
+## Calculate the DBS burdens
 
-We can now calculate the indel burdens per base pair using the total number of indels called per sample and the total base calls from the SBS burdens table.
+We can now calculate the DBS burdens per base pair using the total number of DBS called per sample and the total base calls from the SBS burdens table.
 
 ```{r calculate indel burdens}
-#sum indels to give total indel calls
-indel_burdens <- cbind(colnames(mutation_matrix)[-1], colSums(mutation_matrix[,-1]))
-colnames(indel_burdens) <- c("sample", "indel_call_sum")
-burdens <- left_join(burdens, indel_burdens, copy = TRUE)
-burdens$indel_call_sum <- as.numeric(burdens$indel_call_sum)
+#sum DBS to give total DBS calls
+dbs_burdens <- cbind(colnames(mutation_matrix)[-1], colSums(mutation_matrix[,-1]))
+colnames(dbs_burdens) <- c("sample", "dbs_call_sum")
+burdens <- left_join(burdens, dbs_burdens, copy = TRUE)
+burdens$dbs_call_sum <- as.numeric(burdens$dbs_call_sum)
 
 #divide by total bases called to give indel burden per bp
-burdens <- mutate(burdens, indel_burden = indel_call_sum / total)
+burdens <- mutate(burdens, dbs_burden = dbs_call_sum / total)
+
+#change NAs to zero
+burdens[is.na(burdens)] <- 0
+
 ```
 
 We can also calculate the 95% confidence intervals for these burdens as follows. The rationale for this approach follows that used for the SBS burden intervals in the NanoSeq pipeline (https://github.com/cancerit/NanoSeq/blob/develop/R/nanoseq_results_plotter.R#L507).
 
-```{r calculate indel burden CIs}
+```{r calculate dbs burden CIs}
 
 #for each sample:
 for (i in 1:nrow(burdens)) {
   
   # Calculate Poisson confidence intervals for the observed indel counts
-  ci <- poisson.test((burdens$indel_call_sum)[i])$conf.int[1:2]
+  ci <- poisson.test((burdens$dbs_call_sum)[i])$conf.int[1:2]
   
   # Correct according to the total bp called 
   corrected_ci <- ci / burdens$total[i]
   
   # Add to burdens table
-  burdens$indel_burden_lci[i] <- corrected_ci[1]
-  burdens$indel_burden_uci[i] <- corrected_ci[2]
+  burdens$dbs_burden_lci[i] <- corrected_ci[1]
+  burdens$dbs_burden_uci[i] <- corrected_ci[2]
 }
 ```
 
@@ -141,13 +145,13 @@ control_names <- controls$sample
 Plot the distribution of the control burdens:
 
 ```{r plot control burdens}
-control_burdens_plot <- ggplot(controls, aes(reorder(sample_name, indel_burden), indel_burden, fill = treatment)) +
+control_burdens_plot <- ggplot(controls, aes(reorder(sample_name, dbs_burden), dbs_burden, fill = treatment)) +
   geom_col() +
-  geom_linerange(aes(x = sample_name, ymin = indel_burden_lci, ymax = indel_burden_uci)) +
-  theme_minimal() +
+  geom_linerange(aes(x = sample_name, ymin = dbs_burden_lci, ymax = dbs_burden_uci)) +
+  theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   xlab("Sample") +
-  ylab("Indel burden per bp") + 
+  ylab("DBS burden per bp") + 
   facet_grid(~treatment, scales = "free") +
   scale_fill_manual(values = natparks.pals("Yellowstone", n = length(unique(controls$treatment))))
   
@@ -165,10 +169,10 @@ burdens <- left_join(burdens, select(metadata, sample, group))
 
 #Summary stats for bg burdens
 bg_summary_stats <- burdens %>% filter(sample %in% control_names & patient==org) %>% dplyr::group_by(group) %>%
-   dplyr::summarise(mean = mean(indel_burden), max = max(indel_burden), min = min(indel_burden), median = median(indel_burden), sd = sd(indel_burden), count = n())
+   dplyr::summarise(mean = mean(dbs_burden), max = max(dbs_burden), min = min(dbs_burden), median = median(dbs_burden), sd = sd(dbs_burden), count = n())
 
 #Add 95% CIs to bg burden summary stats
-bg_CI_table <- as.data.table(filter(burdens, sample %in% control_names & patient == org))[,as.list(CI(indel_burden)), by = group]
+bg_CI_table <- as.data.table(filter(burdens, sample %in% control_names & patient == org))[,as.list(CI(dbs_burden)), by = group]
 bg_summary_stats <-left_join(bg_summary_stats, select(bg_CI_table, -c(mean)), by = "group")
 ```
 
@@ -185,12 +189,12 @@ First, we can plot the same plot as above with the control distributions, but ad
 treatment_list <- unique(filter(mutation_matrix_metadata_burdens, group != "control")$treatment)
 
 for (i in treatment_list) {
-  control_v_treatment_burdens_plot <- ggplot(filter(mutation_matrix_metadata_burdens, patient == org & (group == "control" | treatment == i)), aes(reorder(sample_name, -indel_burden), indel_burden, fill = group)) + geom_col() +
-  geom_linerange(aes(x = sample_name, ymin = indel_burden_lci, ymax = indel_burden_uci)) +
+  control_v_treatment_burdens_plot <- ggplot(filter(mutation_matrix_metadata_burdens, patient == org & (group == "control" | treatment == i)), aes(reorder(sample_name, -dbs_burden), dbs_burden, fill = group)) + geom_col() +
+  geom_linerange(aes(x = sample_name, ymin = dbs_burden_lci, ymax = dbs_burden_uci)) +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), strip.text.x = element_text(angle = 90)) +
   xlab("Sample") +
-  ylab("Indel burden per bp") + 
+  ylab("DBS burden per bp") + 
   labs(title = paste0(i, " vs. Control (95% CI: ", signif(bg_summary_stats$lower, 3), " - ", signif(bg_summary_stats$upper, 3), ")")) +
   facet_grid(~treatment, scales = "free") +
   scale_fill_manual(values = natparks.pals("Volcanoes", n = 2))
@@ -209,13 +213,13 @@ The sign_mutagenesis column will be 'Y' if the burden is significantly higher th
 
 ```{r generate table of mutagenesis results}
 #select data from current table
-mutagenesis_table <- select(mutation_matrix_metadata_burdens, sample, patient, tissue_sample, treatment, sample_name, concentration, tissue, group, total, indel_burden, indel_burden_lci, indel_burden_uci)
+mutagenesis_table <- select(mutation_matrix_metadata_burdens, sample, patient, tissue_sample, treatment, sample_name, concentration, tissue, group, total, dbs_burden, dbs_burden_lci, dbs_burden_uci)
 
 #add bg summary stats
 mutagenesis_table <- mutagenesis_table %>% mutate(bg_burden_mean = bg_summary_stats$mean) %>% mutate(bg_burden_lci = bg_summary_stats$lower) %>% mutate(bg_burden_uci = bg_summary_stats$upper)
 
 #add whether sample CI overlaps bg CI - 'Y' if higher, 'N' if within bg CI, low if below bg CI - if this occurs this is odd and should be investigated
-mutagenesis_table <- mutagenesis_table %>% mutate(sign_mutagenesis = case_when(indel_burden_lci >= bg_burden_uci ~ "Y", (indel_burden_lci < bg_burden_uci) & (indel_burden_uci >= bg_burden_lci) ~ "N", TRUE ~ "low" ))
+mutagenesis_table <- mutagenesis_table %>% mutate(sign_mutagenesis = case_when(dbs_burden_lci >= bg_burden_uci ~ "Y", (dbs_burden_lci < bg_burden_uci) & (dbs_burden_uci >= bg_burden_lci) ~ "N", TRUE ~ "low" ))
 
 ```
 
@@ -255,8 +259,8 @@ data_dropped_samples <- filter(mutation_matrix_metadata_burdens, !(sample %in% s
 We can now output these tables for use downstream:
 
 ```{r output data tables}
-write_csv(data_samples_of_interest, paste0(org, "_indels_data_samples_of_interest.csv"))
-write_csv(data_dropped_samples, paste0(org, "_indels_data_dropped_samples.csv"))
-write_csv(mutagenesis_table, paste0(org, "_indels_mutagenesis_table.csv"))
+write_csv(data_samples_of_interest, paste0(org, "_dbs_data_samples_of_interest.csv"))
+write_csv(data_dropped_samples, paste0(org, "_dbs_data_dropped_samples.csv"))
+write_csv(mutagenesis_table, paste0(org, "_dbs_mutagenesis_table.csv"))
 ```
 
