@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230324_expsigfinder_SBS96/")
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230401/extractions/wp4_2530_20230401_expsigfinder_SBS96/")
 ```
 
 ```{r packages, include=FALSE}
@@ -29,14 +29,14 @@ This script is part of ExpSigfinder (https://github.com/EllieDunstone/ExpSigfind
 Read in the mutation matrix. This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
 
 ```{r read matrix}
-mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/trint_subs_matrix_corrected.tsv", sep = "\t", header = T, as.is = T) 
+mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230401/data/trint_subs_matrix_corrected.tsv", sep = "\t", header = T, as.is = T) 
 ```
 
 If required, trim the sample names (sometimes these get output with the parent dir prefixed).
 
 ```{r trim sample names}
 #Trim sample IDs 
-colnames(mutation_matrix)[-1] <- stringr::str_sub(colnames(mutation_matrix), 30, -1)[-1] #May need to alter the start position depending on input
+colnames(mutation_matrix)[-1] <- stringr::str_sub(colnames(mutation_matrix), 32, -1)[-1] #May need to alter the start position depending on input
 ```
 
 
@@ -45,7 +45,7 @@ colnames(mutation_matrix)[-1] <- stringr::str_sub(colnames(mutation_matrix), 30,
 Read in the corrected mutation burden data for identification of samples showing significant increase compared to the background.
 
 ```{r read corrected burdens}
-burdens <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/results.mut_burden_all.tsv", sep = "\t", header = T, as.is = T) 
+burdens <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230401/data/results.mut_burden_all.tsv", sep = "\t", header = T, as.is = T) 
 ```
 
 
@@ -75,7 +75,7 @@ for (org in org_lines) {
 Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once? For now, select your organoid line first here:
 
 ```{r select org line}
-org <- "PD57287"
+org <- "PD52491"
 ```
 
 
@@ -100,7 +100,7 @@ Calculate the means of control samples for each mutation type, and the overall m
 First, we identify the control samples:
 
 ```{r select controls}
-controls <- filter(mutation_matrix_metadata_burdens, group == "control")
+controls <- filter(mutation_matrix_metadata_burdens, group == "Control")
 control_names <- controls$sample
 ```
 
@@ -119,8 +119,6 @@ control_burdens_plot <- ggplot(controls, aes(reorder(sample_name, burden), burde
   
 control_burdens_plot
 ```
-
-Do we want to add any formal statistical test here? We have effectively the sample burdens, and upper and lower confidence intervals. For some pairs, the confidence intervals don't quite overlap, but there still may not be anything overly concerning going on?
 
 If there is no evidence of meaningful differences between the control samples, they can be treated as replicates of the control.
 

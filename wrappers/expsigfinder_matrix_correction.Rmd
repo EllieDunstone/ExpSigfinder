@@ -78,7 +78,7 @@ sign_mutagenesis_table <- filter(mutagenesis_table, sign_mutagenesis == "Y" | gr
 
 ## Subset uncorrected matrix
 
-We can now subset the input matrix to contain only samples with evidence of significant increase in mutagenesis.
+We can now subset the input matrix to contain only samples with evidence of significant increase in mutagenesis and control samples.
 
 ```{r subset mutation matrix}
 sign_mutation_matrix <-  mutation_matrix[names(mutation_matrix) %in% sign_mutagenesis_table$sample]
@@ -118,8 +118,8 @@ We can set a threshold below which to drop samples - these samples may have evid
 
 ```{r drop low mut calls}
 #identify samples below threshold and drop from calculation table, output dropped samples
-mut_matrix_calcs_table_keep <- filter(mut_matrix_calcs_table, total_muts >= 200)
-mut_matrix_calcs_table_dropped <- filter(mut_matrix_calcs_table, total_muts < 200)
+mut_matrix_calcs_table_keep <- filter(mut_matrix_calcs_table, total_muts >= 100)
+mut_matrix_calcs_table_dropped <- filter(mut_matrix_calcs_table, total_muts < 100)
 write.csv(mut_matrix_calcs_table_dropped, "mutation_matrix_low_raw_calls.csv")
 
 #drop from the mutation matrix
@@ -137,20 +137,44 @@ We can now correct the matrix to the estimated number of mutations per diploid h
 
 ```{r correct matrix}
 #Add total duplex coverage to calculation table and calculate correction factor
-mut_matrix_calcs_table_keep <- mut_matrix_calcs_table_keep %>% mutate(sample = rownames(mut_matrix_calcs_table_keep)) %>% left_join(select(burdens, sample, total)) %>% mutate(cf = 6000000000/total)
+mut_matrix_calcs_table_keep <- mutate(mut_matrix_calcs_table_keep, sample = rownames(mut_matrix_calcs_table_keep))
+mut_matrix_calcs_table_keep <- left_join(mut_matrix_calcs_table_keep, select(burdens, sample, total))
+mut_matrix_calcs_table_keep <- mutate(mut_matrix_calcs_table_keep, cf = 6000000000/total)
+
+#check that range of cfs is acceptable
+min(mut_matrix_calcs_table_keep$cf)
+max(mut_matrix_calcs_table_keep$cf)
+
+#init corrected matrix
+sign_mutation_matrix_coverage_corrected <- matrix(nrow = 96)
+
+#correct
+for (i in 1:nrow(mut_matrix_calcs_table_keep)) {
+  sample_i <- colnames(sign_mutation_matrix)[i+1]
+  uncor_col <- sign_mutation_matrix[,(i+1)]
+  cfi <- mut_matrix_calcs_table_keep$cf[mut_matrix_calcs_table_keep$sample == sample_i]
+  cor_col <- round(uncor_col*cfi)
+  sign_mutation_matrix_coverage_corrected <- cbind(sign_mutation_matrix_coverage_corrected, cor_col)
+  colnames(sign_mutation_matrix_coverage_corrected)[ncol(sign_mutation_matrix_coverage_corrected)] <- sample_i
+}
+
+#add first col
+sign_mutation_matrix_coverage_corrected[,1] <- sign_mutation_matrix[,1]
+colnames(sign_mutation_matrix_coverage_corrected)[1] <- "MutationType"
+
 
 #check order
-mut_matrix_calcs_table_keep["sample"] == colnames(sign_mutation_matrix)[-1]
+#mut_matrix_calcs_table_keep["sample"] == colnames(sign_mutation_matrix)[-1]
 
 #Multiply matrix by factors
-corrected_counts <- sign_mutation_matrix[,-1]*t(mut_matrix_calcs_table_keep["cf"])
-sign_mutation_matrix_coverage_corrected <- cbind(sign_mutation_matrix[,1], round(corrected_counts))
-colnames(sign_mutation_matrix_coverage_corrected)[1] <- "MutationType"
+# corrected_counts2 <- sign_mutation_matrix[,-1]*t(mut_matrix_calcs_table_keep["cf"])
+# sign_mutation_matrix_coverage_corrected2 <- cbind(sign_mutation_matrix[,1], round(corrected_counts2))
+# colnames(sign_mutation_matrix_coverage_corrected2)[1] <- "MutationType"
 ```
 
 And output it for use in downstream analysis.
 
 ```{r output corrected matrix}
-write.csv(sign_mutation_matrix_coverage_corrected, "sign_mutation_matrix_coverage_corrected.csv", row.names = FALSE)
+write.csv(sign_mutation_matrix_coverage_corrected, "sign_mutation_matrix_coverage_corrected_fixed.csv", row.names = FALSE)
 ```
 
