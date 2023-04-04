@@ -317,6 +317,15 @@ colnames(all_sigs)[1] <- "MutationType"
 write_csv(all_sigs, "expsigfinder_bg_removed_all_sigs_SBS96.csv")
 ```
 
+If you need to debug, output a list of all samples analysed and whether or not they are succeeding:
+
+```{r output debug table}
+debug_table <- as.data.frame(cbind(sample = colnames(mutation_matrix)[-1], working = NA))
+debug_table <- mutate(debug_table, working = case_when(sample %in% colnames(all_sigs) ~ "Y", TRUE ~ "N"))
+debug_table <- left_join(debug_table, metadata)
+
+write_csv(debug_table, "expsigfinder_debug_table.csv")
+```
 
 
 ## Next steps
@@ -325,16 +334,14 @@ Make sure I understand the mathematical principles behind these calculations and
 
 Work out why some of the treatment groups are currently failing.
 
-Needs implementing so that it runs for all organoid lines:
-  - Initial step: Look at the combined control spectra for all organoid lines - do they significantly differ? Do we have enough mutations per organoid line to calculate robust background spectra for each organoid line?
+Needs implementing so that it runs for all organoid lines in more automated way
 
 determine whether the treatment spectrum is different from the control?
   - needs to incorporate the diffs in effective coverage somehow ..
 
-Work out how to incorporate different concentrations, chronic treatments and e.g. +/- S9 into this analysis:
- - Could test beforehand to see if the spectra differ and then decide whether to merge for the analysis or not?
 
 Downstream analysis to determining whether the resulting signatures are significantly different between:
+  - concentrations, +-S9, etc.
   - Treatment groups: e.g. cisplatin vs. carboplatin
   - Organoid lines: e.g. bendamustine in PD41849 vs. bendamustine in PD41850
   - Tissues of origin: e.g. is there evidence for a significant effect of tissue of origin, after accounting for the effect of donor of origin
