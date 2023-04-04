@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230324_expsigfinder_SBS96/")
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/")
 ```
 
 ```{r packages, include=FALSE}
@@ -40,7 +40,7 @@ install_github("xqzou/ExpSigfinder")
 Read in the mutation matrix (input your own path to file). This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values. This matrix should contain samples with evidence of a significant increase in mutagenesis compared to the control samples (see expsigfinder_mut_detection.Rmd) plus the control samples, and be corrected for duplex coverage (see expsigfinder_matrix_correction.Rmd).
 
 ```{r read matrix}
-mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230324_expsigfinder_SBS96/sign_mutation_matrix_coverage_corrected.csv", sep = ",", header = T, as.is = T) 
+mutation_matrix <- read.table("sign_mutation_matrix_coverage_corrected.csv", sep = ",", header = T, as.is = T) 
 ```
 
 If required, trim the sample names (sometimes these get output with the parent dir prefixed).
@@ -78,7 +78,7 @@ for (org in org_lines) {
 Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once? For now, select your organoid line first here:
 
 ```{r select org line}
-org <- "PD41849"
+org <- "PD57287"
 ```
 
 Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once?
@@ -101,14 +101,14 @@ Calculate the means of control samples for each mutation type, and the overall m
 First, we identify the control samples:
 
 ```{r select controls}
-controls <- filter(mutation_matrix_metadata, group == "control")
+controls <- filter(mutation_matrix_metadata, group == "Control")
 control_names <- controls$sample
 ```
 
 If you need to exclude any problematic controls at this stage, this chunk can be used:
 
 ```{r adjust controls}
-controls <- filter(mutation_matrix_metadata, group=="control" & sample!="PD52491x_ds0001" & sample!="PD52491u_ds0001")
+controls <- filter(mutation_matrix_metadata, group=="Control" & sample!="PD52491x_ds0001" & sample!="PD52491u_ds0001")
 control_names <- control_names[-c(6,7)]
 ```
 
@@ -116,11 +116,11 @@ We now calculate the background burden and spectrum using these samples.
 
 ```{r calculate background}
 #calculate mean counts of each mutation type across all control samples
-PD41849_mutation_matrix <- PD41849_mutation_matrix %>%
-  mutate(bg_profile = rowMeans(PD41849_mutation_matrix[,control_names]))
+PD57287_mutation_matrix <- PD57287_mutation_matrix %>%
+  mutate(bg_profile = rowMeans(PD57287_mutation_matrix[,control_names]))
 
 #calculate mean total mutation burden across all control samples
-bg_mean <- sum(PD41849_mutation_matrix$bg_profile)
+bg_mean <- sum(PD57287_mutation_matrix$bg_profile)
 print(bg_mean)
 ```
 
@@ -160,7 +160,7 @@ Automated for all treatment groups:
 ```{r calculate and plot treatment group profiles for all treatment groups}
 
 #Generate list of non-control treatment group names
-treatment_groups <- unique(filter(mutation_matrix_metadata, group != "control")$treatment)
+treatment_groups <- unique(filter(mutation_matrix_metadata, group != "Control")$treatment)
 
 #Run calculation and plotting for each treatment group
 for (i in treatment_groups) {
@@ -212,7 +212,7 @@ Or for individual samples:
 ```{r calculate and plot profiles for all samples individually}
 
 #Generate list of non-control sample names
-non_control_samples <- filter(mutation_matrix_metadata, group != "control")$sample
+non_control_samples <- filter(mutation_matrix_metadata, group != "Control")$sample
 
 #Run calculation and plotting for each sample
 for (i in non_control_samples) {
@@ -225,7 +225,7 @@ for (i in non_control_samples) {
   
   # Make profile of sample with background removed - skip and print error if one sample fails
   tryCatch({
-    Wrap_KOSig(PD41849_mutation_matrix, "bg_profile", i, 100, bg_mean, 2, i)
+    Wrap_KOSig(PD57287_mutation_matrix, "bg_profile", i, 100, bg_mean, 2, i)
     sig <- read.table(paste0(i,".txt"), sep = "\t", header = T, as.is = T)
     plotCountbasis(sig, 1, 6, 9, paste0(i, ".pdf"))
     plotPercentagebasis(sig, 1, 6, 9, paste0(i, "_percentage.pdf"))}, error=function(e){cat(paste0("ERROR for treatment group ", i, ": "),conditionMessage(e), "\n")})
@@ -297,24 +297,24 @@ org_line_dirs <- list.files(parent_dir, pattern = "PD")
 #init dataframe
 all_sigs <- as.data.frame(matrix(nrow = 96, ncol = 1))
 
-for (org_line in org_line_dirs){
-  sig_files_list <- list.files(paste0(parent_dir, org_line), pattern = ".txt")
-  for (file in sig_files_list) {
-    print(paste0(parent_dir, org_line, "/", file))
-    sig_file <- read_table(paste0(parent_dir, org_line, "/", file))
-    name <- paste0(str_split_i(file, "\\.", 1), "_", str_split_i(org_line, "_", -1))
+#get list of sig files
+sig_files_list <- list.files(pattern = ".txt")
+
+
+for (file in sig_files_list) {
+    sig_file <- read_table(file)
+    name <- str_split_i(file, "\\.", 1)
     print(name)
-    sig_file <- mutate(sig_file, norm_exposure=KO_exposure/sum(KO_exposure)) #normalise signature to sum to 1
+    sig_file <- mutate(sig_file, norm_exposure = KO_exposure / sum(KO_exposure)) #normalise signature to sum to 1
     all_sigs <- cbind(all_sigs, sig_file$norm_exposure) 
     colnames(all_sigs)[length(colnames(all_sigs))] <- name
   }
-}
 
 all_sigs[1] <- sig_file$MutationType
 colnames(all_sigs)[1] <- "MutationType"
 
 
-write_csv(all_sigs, "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/expsigfinder_20230127_all_sigs.csv")
+write_csv(all_sigs, "expsigfinder_bg_removed_all_sigs_SBS96.csv")
 ```
 
 
