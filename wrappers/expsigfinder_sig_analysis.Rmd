@@ -9,6 +9,7 @@ editor_options:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/")
 ```
 
 ```{r load packages}
@@ -26,8 +27,23 @@ This script is for the downstream analysis of putative signatures output by ExpS
 ## Read in signature table
 
 ```{r read in sigs}
-all_sigs <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/expsigfinder_20230127_all_sigs.csv", sep = ",", header = TRUE, row.names = 1)
+all_sigs <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/expsigfinder_bg_removed_all_sigs_SBS96.csv", sep = ",", header = TRUE, row.names = 1)
 ```
+
+## Read in metadata
+
+```{r read metadata}
+metadata <- read.table("/Users/ed4/Documents/phd/chemo_project/Metadata/WP4/wp4_sample_subsetting.csv", sep=",", header = TRUE)
+```
+
+```{r replace sample names if needed}
+
+for (i in 1:ncol(all_sigs)) {
+  colnames(all_sigs)[i] <- metadata$sample_name[metadata$sample == colnames(all_sigs)[i]]
+}
+```
+
+
 # Define function for calculating cosine similarity
 
 This section defines a function to calculate the cosine similarity between the spectra/signatures in your test and reference sets. In this script, the putative signatures will be compared against each other first to assess similarity between signatures of the same treatment in different organoid lines, and different treatments that generate similar signatures.
@@ -70,7 +86,7 @@ csmap = comparesignatures_cossim(reference_signatures, test_signatures)
 #Write out your output as table
 rownames(csmap) = colnames(reference_signatures)
 colnames(csmap) = colnames(test_signatures)
-write.csv(csmap, file = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/analysis/20230131_expsigfinder_cossim_all_v_all.csv", row.names = TRUE)
+write.csv(csmap, file = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/20230404_expsigfinder_cossim_all_v_all.csv", row.names = TRUE)
 ```
 
 ## Subset results data for plotting (optional)
@@ -143,8 +159,10 @@ Now we can filter these to look at which signatures are similar:
 
 ```{r filter sig pairs by cossim}
 cossim_table_0.8 <- filter(cossim_table, cossim > 0.8)
+hist(as.numeric(cossim_table_0.8$cossim))
 cossim_table_0.9 <- filter(cossim_table, cossim > 0.9)
 ```
+
 
 Attempting hierarchical clustering:
 
@@ -188,7 +206,11 @@ Here I am trialing PCA to cluster the signatures.
 
 #Add organoid line and treatment metadata
 t_all_sigs <- t(all_sigs)
-t_all_sigs_metadata <- as.data.frame(t_all_sigs) %>% mutate(sig_name = rownames(t_all_sigs)) %>% mutate(treatment = str_split_i(sig_name, "_", 1)) %>% mutate(org_line = str_split_i(sig_name, "_", 2))
+t_all_sigs_df <- as.data.frame(t_all_sigs)
+t_all_sigs_df <- mutate(t_all_sigs_df, sample_name = row.names(t_all_sigs_df))
+t_all_sigs_metadata <- left_join(t_all_sigs_df, metadata)
+  
+#mutate(sig_name = rownames(t_all_sigs)) %>% mutate(treatment = str_split_i(sig_name, "_", 1)) %>% mutate(org_line = str_split_i(sig_name, "_", 2))
 
 all_sigs.pca <- prcomp(t_all_sigs, center = TRUE, scale. = TRUE)
 summary(all_sigs.pca)
@@ -215,3 +237,151 @@ Here I am trialing UMAP to cluster the signatures.
 umap(all_sigs, labels=t_all_sigs_metadata$treatment, text=t_all_sigs_metadata$treatment,
 textlabelsize = 2)
 ```
+
+## Refining signature list
+
+We now want to see whether some of the putative signatures identified in the samples represent the same underlying signature. 
+
+### Samples treated with the same agent
+
+First, we want to check for similarities between samples treated with the same agents. We can subset our list of all signatures by treatment.
+
+```{r subset sigs by treatment}
+#ID all treatments
+treatment_list <- unique(t_all_sigs_metadata$treatment)
+
+for (t in treatment_list) {
+  treatment_samples <- t_all_sigs_metadata$sample_name[t_all_sigs_metadata$treatment == t]
+  print(treatment_samples)
+  assign(paste0(t, "_all_sigs"), all_sigs[, colnames(all_sigs) %in% treatment_samples])
+}
+```
+
+```{r init final sig matrix}
+final_sigs <- as.data.frame(matrix(nrow = nrow(all_sigs)))
+final_sigs[,1] <- row.names(all_sigs)
+colnames(final_sigs)[1] <- "MutationType"
+```
+
+
+First, if there is only one signature for an agent, assign this to to the final list as the signature for this agent, and drop from the treatment list.
+
+
+```{r add single-sample agents}
+
+for (t in treatment_list) {
+  treatment_samples <- t_all_sigs_metadata$sample_name[t_all_sigs_metadata$treatment == t]
+  if (length(treatment_samples) == 1) {
+    sig <- all_sigs[, colnames(all_sigs) == treatment_samples]
+    print(treatment_samples)
+    final_sigs <- cbind(final_sigs, sig)
+    colnames(final_sigs)[ncol(final_sigs)] <- paste0(t, "_sig")
+    treatment_list <- treatment_list[-which(treatment_list == t)]
+  }
+}
+
+print(treatment_list)
+```
+
+
+We want to define a function that we can use to merge putative signatures if we decide they represent the same underlying signature. To do this, we want to weight the signatures according to the actual count data they represent.
+
+We will need the burdens table to calculate the appropriate weightings:
+
+```{r read burdens and merge metadata}
+burdens <- read_table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/results.mut_burden_all.tsv")
+burdens_metadata <- left_join(burdens, select(metadata, sample, sample_name))
+```
+
+
+```{r define sig merge function}
+#input a vector of names of 2 or more signatures and the dataframe they are present in. Also, a vector of weightings optionally, which will default to even weighting if not provided.
+
+sigMerge <- function(sig_names, input_df, weightings = rep(1 / length(sig_names), length(sig_names))) {
+  
+  print(weightings)
+  
+  # select the columns with the desired signatures from the input data frame
+  df4merge <- input_df[, sig_names]
+  
+  # multiply by the weightings
+  for (i in 1:length(sig_names)) {
+    df4merge[,i] <- df4merge[,i] * weightings[i]
+  }
+  
+  # calculate sums to give weighted averages
+  df4merge <- mutate(df4merge, av_sig = rowSums(df4merge))
+  
+  print(df4merge)
+  
+  # return the output
+  return(df4merge$av_sig)
+}
+
+# debugging
+# test_output <- sigMerge(c("MX_sig", "Chlorambucil_sig"), final_sigs)
+# test_output2 <- sigMerge(c("MX_sig", "Chlorambucil_sig"), final_sigs, c(0.01,0.99))
+# check <- cbind(test_output2, final_sigs$Chlorambucil_sig)
+```
+
+We can also define a signature to calculate the appropriate weights for a given list of samples to be merged:
+NOTE: this isn't quite right .. It shouldn't just be coverage, it should be proportional to the number of excess mutations. this needs more work
+
+```{r define weight calc function}
+#input a list of signature names and output the relative weights according to duplex coverage taken from the burdens_metadata table
+
+getWeights <- function(sig_names) {
+  wts <- as.data.frame(cbind(sample_name = sig_names))
+  wts <- left_join(wts, select(burdens_metadata, sample_name, total))
+  wts <- mutate(wts, wt = total / sum(wts$total))
+  return(wts$wt)
+}
+
+#test
+getWeights(c("D88-BLEO-10", "D88-BLEO-20"))
+```
+
+
+Now we can look at which samples we have for each treatment remaining:
+
+```{r inspect}
+for (t in treatment_list) {
+  treatment_samples <- t_all_sigs_metadata$sample_name[t_all_sigs_metadata$treatment == t]
+  print(treatment_samples)
+}
+```
+
+For a given treatment, we can look at the cosine similarity results for the relevant samples:
+
+```{r select treatment}
+tre <- "Bendamustine"
+```
+
+```{r subset csmap treatment}
+tre_samples <- t_all_sigs_metadata$sample_name[t_all_sigs_metadata$treatment == tre]
+csmap_subset <- csmap[tre_samples, tre_samples]
+```
+
+```{r heatmap csmap treatment subset}
+pheatmap(csmap_subset, color=natparks.pals("Acadia",type="continuous",n=40),border_color="NA",cellwidth = 20, cellheight = 20, angle_col = 45,cluster_rows=TRUE,cluster_cols=TRUE, show_rownames = T, show_colnames = T, fontsize = 10)
+```
+
+```{r cossim dist hclust subset treatment}
+csmap_dist_subset <- dist(1-csmap_subset) #make dist object using cs distance (1 - cs sim)
+
+clust_csmap_dist_subset <- hclust(csmap_dist_subset)
+
+plot(clust_csmap_dist_subset, hang = -1, cex = 1)
+```
+
+We can use these results to decide which (if any) putative signatures should be merged together before adding to the final list of signatures.
+
+If we want to merge the entire group, we can use this chunk:
+
+```{r merge whole treatment group}
+
+sigMerge(tre_samples, )
+
+
+```
+
