@@ -18,6 +18,7 @@ library(pheatmap)
 library(NatParksPalettes)
 library(ggbiplot)
 library(M3C)
+library(ggrepel)
 ```
 
 ## Introduction
@@ -437,170 +438,199 @@ We can now explore the similarities between the refined signatures by recalculat
 
 First, set your test and reference signatures. Here, these are the same (the file of all signatures).
 
-```{r set inputs}
-test_signatures <- all_sigs[order(row.names(all_sigs)),]
-test_signatures <- as.matrix(test_signatures)
-
+```{r reset inputs}
+test_signatures <- as.matrix(final_sigs[,-1])
 reference_signatures <- test_signatures
 ```
 
-We can now use this function to calculate cosine similarities between the test and reference set, and generate an output file with the results.
-
-```{r cossim output}
+```{r cossim output refined sigs}
 #Calculate cosine similarities
-csmap = comparesignatures_cossim(reference_signatures, test_signatures)
+csmap_refined_sigs = comparesignatures_cossim(reference_signatures, test_signatures)
 
 #Write out your output as table
-rownames(csmap) = colnames(reference_signatures)
-colnames(csmap) = colnames(test_signatures)
-write.csv(csmap, file = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/20230404_expsigfinder_cossim_all_v_all.csv", row.names = TRUE)
+rownames(csmap_refined_sigs) = colnames(reference_signatures)
+colnames(csmap_refined_sigs) = colnames(test_signatures)
+write.csv(csmap_refined_sigs, file = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/expsigfinder_cossim_all_v_all_treatment_refined_sigs.csv", row.names = TRUE)
 ```
 
-## Subset results data for plotting (optional)
-
-If you want to plot only a subset of the data, then you can edit this section to remove the rows/columns corresponding to the samples you don't want to include in the plot. If you do this, you need to change the plotting command to plot the new table ```csmap_subset```.
-
-```{r subset results}
-#Subset for plotting if needed
-csmap_subset <- csmap[c(1,2,4:12,14),c(1,2,4:12,14)]
+```{r heatmap refined sigs}
+pheatmap(csmap_refined_sigs, color = natparks.pals("Acadia", type = "continuous", n = 40),border_color="NA",cellwidth = 10, cellheight = 10, angle_col = 45,cluster_rows=TRUE,cluster_cols=TRUE, show_rownames = T, show_colnames = T, fontsize = 8)
 ```
-
-## Plot results as a heatmap
-
-We can now plot these results as a heatmap. There are lots of options for how to show the data, with details available in the [pheatmap documentation](https://www.rdocumentation.org/packages/pheatmap/versions/1.0.12/topics/pheatmap).
-
-```{r heatmap}
-pheatmap(csmap, color=natparks.pals("Acadia",type="continuous",n=40),border_color="NA",cellwidth = 4, cellheight = 4, angle_col = 45,cluster_rows=TRUE,cluster_cols=TRUE, show_rownames = T, show_colnames = T, fontsize = 4)
-```
-
-## Plot distribution of cosine similarities
 
 Plot the distribution of cosine similarities between the signatures to attempt to identify a sensible cut off for merging them.
 
-```{r cosine similarity dist plot}
-cossims <- unique(unlist(as.list(csmap))) #removing duplicates so each point not included twice, and to remove all but one self-comparison. This could be improved. See below for a better method - rework this.
+```{r cosine similarity dist plot refined sigs}
+cossims_refined_sigs <- unique(unlist(as.list(csmap_refined_sigs))) #removing duplicates so each point not included twice, and to remove all but one self-comparison. This could be improved. See below for a better method - rework this.
 
-hist(cossims, breaks = "Scott")
+hist(cossims_refined_sigs, breaks = "Scott")
 
-cossims_df <- as.data.frame(cossims)
-ggplot(cossims_df, aes(x="cosine similarities", y=cossims)) +
+cossims_df_refined_sigs <- as.data.frame(cossims_refined_sigs)
+ggplot(cossims_df_refined_sigs, aes(x="cosine similarities", y=cossims_refined_sigs)) +
   geom_violin()
 ```
 
 We can now filter the comparisons in order to look at which signatures are similar. First, format the table:
 
-```{r format cossim df}
+```{r format cossim df refined sigs}
 
 #reformat the table
-csmap_tidy <- as.data.frame(cbind(sig1 = rownames(csmap), csmap))
-rownames(csmap_tidy) <- NULL
+csmap_tidy_refined_sigs <- as.data.frame(cbind(sig1 = rownames(csmap_refined_sigs), csmap_refined_sigs))
+rownames(csmap_tidy_refined_sigs) <- NULL
 
-csmap_tidy <- pivot_longer(csmap_tidy, cols=c(2:length(csmap_tidy)), names_to = "sig2", values_to = "cossim")
+csmap_tidy_refined_sigs <- pivot_longer(csmap_tidy_refined_sigs, cols=c(2:length(csmap_tidy_refined_sigs)), names_to = "sig2", values_to = "cossim")
 
 #filter to remove self-comparisons
-csmap_tidy <- filter(csmap_tidy, sig1 != sig2)
-
-#filter to remove duplicates 
-# entries <- list()
-# include <- c()
-# 
-# for (i in 1:nrow(csmap_tidy)){
-#   if (sort(c(csmap_tidy$sig1[i], csmap_tidy$sig2[i], csmap_tidy$cossim[i])) %in% entries) {
-#     include <- c(include, FALSE)
-#   } else {
-#     include <- c(include, TRUE)
-#   }
-#   entries[[i]] <- sort(c(csmap_tidy$sig1[i], csmap_tidy$sig2[i], csmap_tidy$cossim[i]))
-# }
-
+csmap_tidy_refined_sigs <- filter(csmap_tidy_refined_sigs, sig1 != sig2)
 
 #dumb method but quicker
-csmap_tidy_sorted <- csmap_tidy[rev(order(csmap_tidy$cossim)),] #sort table
-csmap_tidy_sorted_unique <- csmap_tidy_sorted[seq(1, nrow(csmap_tidy_sorted)-1, 2), ] #remove every other row
-length(csmap_tidy_sorted_unique$cossim) == length(unique(csmap_tidy_sorted_unique$cossim)) #check that only unique rows (ID'd using unique cossim values) remain - this may give false negative (FALSE) result if you have two different entries with identical cossim values
+csmap_tidy_sorted_refined_sigs <- csmap_tidy_refined_sigs[rev(order(csmap_tidy_refined_sigs$cossim)),] #sort table
+csmap_tidy_sorted_unique_refined_sigs <- csmap_tidy_sorted_refined_sigs[seq(1, nrow(csmap_tidy_sorted_refined_sigs)-1, 2), ] #remove every other row
+length(csmap_tidy_sorted_unique_refined_sigs$cossim) == length(unique(csmap_tidy_sorted_unique_refined_sigs$cossim)) #check that only unique rows (ID'd using unique cossim values) remain - this may give false negative (FALSE) result if you have two different entries with identical cossim values
 
-cossim_table <- csmap_tidy_sorted_unique
+cossim_table_refined_sigs <- csmap_tidy_sorted_unique_refined_sigs
 ```
 
 Now we can filter these to look at which signatures are similar:
 
 ```{r filter sig pairs by cossim}
-cossim_table_0.8 <- filter(cossim_table, cossim > 0.8)
-hist(as.numeric(cossim_table_0.8$cossim))
-cossim_table_0.9 <- filter(cossim_table, cossim > 0.9)
+cossim_table_0.8_refined_sigs <- filter(cossim_table_refined_sigs, cossim > 0.8)
+hist(as.numeric(cossim_table_0.8_refined_sigs$cossim))
+cossim_table_0.9_refined_sigs <- filter(cossim_table_refined_sigs, cossim > 0.9)
 ```
-
 
 Attempting hierarchical clustering:
 
-```{r cossim dist hclust}
-csmap_dist <- dist(1-csmap) #make dist object using cs distance (1 - cs sim)
+```{r cossim dist hclust refined sigs}
+csmap_dist_refined_sigs <- dist(1-csmap_refined_sigs) #make dist object using cs distance (1 - cs sim)
 
-clust_csmap_dist <- hclust(csmap_dist)
+clust_csmap_dist_refined_sigs <- hclust(csmap_dist_refined_sigs)
 
-plot(clust_csmap_dist, hang = -1, cex = 0.4)
+plot(clust_csmap_dist_refined_sigs, hang = -1, cex = 0.8)
 
 # Convert hclust into a dendrogram and plot
-dend_csmap_dist <- as.dendrogram(clust_csmap_dist)
+dend_csmap_dist_refined_sigs <- as.dendrogram(clust_csmap_dist_refined_sigs)
 # plot
-nodePar <- list(lab.cex = 0.4, pch = c(NA, 19), 
+nodePar <- list(lab.cex = 1, pch = c(NA, 19), 
                 cex = 0.1, col = "blue")
-plot(dend_csmap_dist, type = "rectangle", xlab = "Height",  cex=0.4, horiz=TRUE, nodePar=nodePar)
-
-#using APE package
-library(ape)
-
-big_colour = grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)]
-
-treatment_group = gsub("_[^ ]*", "", clust_csmap_dist$labels)
-# check the TYPE numbers are correct
-big_colour_palette <- sample(big_colour, length(unique(treatment_group)))
-col_assignment = big_colour_palette[1:length(unique(treatment_group))]
-names(col_assignment) = unique(treatment_group)
-cols = col_assignment[treatment_group]
-# then pass COLS into your plot
-
-plot(as.phylo(clust_csmap_dist), type = "fan", cex=0.5, label.offset = 0.1, tip.color = cols)
+plot(dend_csmap_dist_refined_sigs, type = "rectangle", xlab = "Height",  cex=1, horiz=TRUE, nodePar=nodePar)
 
 ```
 
 
-## Plot results as a PCA
+```{r PCA refined sigs}
 
-Here I am trialing PCA to cluster the signatures. 
+#Format
+t_refined_sigs <- t(final_sigs[,-1])
+colnames(t_refined_sigs) <- final_sigs[, 1]
+t_refined_sigs_df <- as.data.frame(t_refined_sigs)
+t_refined_sigs_df <- mutate(t_refined_sigs_df, sample_name = row.names(t_refined_sigs_df))
 
-```{r PCA}
+#PCA
+refined_sigs.pca <- prcomp(t_refined_sigs, center = TRUE, scale. = TRUE)
+summary(refined_sigs.pca)
 
-#Add organoid line and treatment metadata
-t_all_sigs <- t(all_sigs)
-t_all_sigs_df <- as.data.frame(t_all_sigs)
-t_all_sigs_df <- mutate(t_all_sigs_df, sample_name = row.names(t_all_sigs_df))
-t_all_sigs_metadata <- left_join(t_all_sigs_df, metadata)
-  
-#mutate(sig_name = rownames(t_all_sigs)) %>% mutate(treatment = str_split_i(sig_name, "_", 1)) %>% mutate(org_line = str_split_i(sig_name, "_", 2))
+sample_names <- t_refined_sigs_df$sample_name
 
-all_sigs.pca <- prcomp(t_all_sigs, center = TRUE, scale. = TRUE)
-summary(all_sigs.pca)
+ggbiplot(refined_sigs.pca, var.axes = FALSE) +
+  theme_classic() +
+  geom_text_repel(aes(label = sample_names), color = "blue", size = 2)
 
-ggbiplot(all_sigs.pca, var.axes = FALSE, groups = t_all_sigs_metadata$treatment) +
-  theme_classic()
 
 ```
 
-## Plot results as a tSNE
 
-Here I am trialing tSNE to cluster the signatures. 
-
-```{r tSNE}
-tsne(all_sigs, labels=t_all_sigs_metadata$treatment, text=t_all_sigs_metadata$treatment,
-textlabelsize = 2, perplex = 10)
+```{r tSNE refined sigs}
+tsne(final_sigs[,-1], labels=colnames(final_sigs)[-1], text=colnames(final_sigs)[-1],
+textlabelsize = 2, perplex = 5)
 ```
 
-## Plot results as a UMAP
-
-Here I am trialing UMAP to cluster the signatures. 
-
-```{r UMAP}
-umap(all_sigs, labels=t_all_sigs_metadata$treatment, text=t_all_sigs_metadata$treatment,
+```{r UMAP refined sigs}
+umap(final_sigs[,-1], labels=colnames(final_sigs)[-1], text=colnames(final_sigs)[-1],
 textlabelsize = 2)
+```
+
+
+## Comparison across treatment groups
+
+Using the results above, you should be able to identify clusters of putative signatures where there may be underlying signatures in common. Define these below:
+
+```{r define putative signature clusters}
+c2a_subset_names <- c("PhIP+S9_sig", "N-OH-PhIP_sig", "Mitomycin C_sig", "BaP_sig")
+alk_subset_names <- c("Melphalan_D88_sig", "Melphalan_D95_sig", "Bendamustine_sig", "Chlorambucil_sig", "Mechlorethamine_sig")
+platinum_names <- c("Carboplatin_sig", "Cisplatin_D88_sig", "Cisplatin_D95_sig", "Oxaliplatin_sig")
+locarmustine_names <- c("Lomustine_sig", "Carmustine_sig")
+tmz_mam_names <- c("Temozolomide_sig", "MAM_sig")
+```
+
+And initialise a matrix of final signatures:
+
+```{r init final2 sig matrix}
+final2_sigs <- as.data.frame(matrix(nrow = nrow(all_sigs)))
+final2_sigs[,1] <- row.names(all_sigs)
+colnames(final2_sigs)[1] <- "MutationType"
+```
+
+For each cluster, we can now inspect in further detail.
+
+```{r select cluster}
+cluster <- alk_subset_names
+cluster_treatments <- c("Melphalan", "Bendamustine", "Chlorambucil", "Mechlorethamine")
+```
+
+Subset the original csmap of all per-sample putative signatures to contain all samples that contribute to the cluster: 
+
+```{r subset csmap cluster}
+cluster_samples <- t_all_sigs_metadata$sample_name[t_all_sigs_metadata$treatment %in% cluster_treatments]
+csmap_subset <- csmap[cluster_samples, cluster_samples]
+```
+
+```{r heatmap csmap cluster subset}
+pheatmap(csmap_subset, color=natparks.pals("Acadia",type="continuous",n=40),border_color="NA",cellwidth = 12, cellheight = 12, angle_col = 45,cluster_rows=TRUE,cluster_cols=TRUE, show_rownames = T, show_colnames = T, fontsize = 8)
+```
+
+```{r cossim dist hclust subset treatment}
+csmap_dist_subset <- dist(1-csmap_subset) #make dist object using cs distance (1 - cs sim)
+
+clust_csmap_dist_subset <- hclust(csmap_dist_subset)
+
+plot(clust_csmap_dist_subset, hang = -1, cex = 1)
+```
+
+We can use these results to decide which (if any) putative signatures should be merged together before adding to the final list of signatures.
+
+If we want to merge the entire group, we can use this chunk:
+
+```{r merge whole cluster}
+cluster_sig <- sigMerge(cluster_samples, all_sigs, getWeights(cluster_samples))
+```
+
+Or we can merge a subset of the group:
+
+```{r merge subset of cluster}
+#define custom subset
+cluster_samples_subset <- cluster_samples[grep("IP", cluster_samples)]
+
+cluster_sig <- sigMerge(cluster_samples_subset, all_sigs, getWeights(cluster_samples_subset))
+```
+
+
+We can sanity check this merged signature by plotting it:
+
+```{r plot merged sig}
+sigfit::plot_spectrum(cluster_sig)
+```
+
+And if it looks fine, we can add this signature to our table of final_sigs:
+
+```{r append treatment sig to final sigs}
+final2_sigs <- cbind(final2_sigs, cluster_sig)
+colnames(final2_sigs)[ncol(final2_sigs)] <- "Activated_PhIP_sig" #depending on the ID of the merged sig, you may need to change the column name to include further info e.g. the organoid line
+```
+
+Alternatively, the clustering may not indicate that the signatures need merging further. In this case, we can take signatures from the refined table and put them into the final signatures table as they are:
+
+```{r refined sig to final table}
+treatment_sig <- final_sigs$Melphalan_D95_sig
+final2_sigs <- cbind(final2_sigs, treatment_sig)
+colnames(final2_sigs)[ncol(final2_sigs)] <- "Melphalan_D95_sig"
 ```
