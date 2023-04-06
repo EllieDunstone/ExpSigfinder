@@ -573,8 +573,8 @@ colnames(final2_sigs)[1] <- "MutationType"
 For each cluster, we can now inspect in further detail.
 
 ```{r select cluster}
-cluster <- alk_subset_names
-cluster_treatments <- c("Melphalan", "Bendamustine", "Chlorambucil", "Mechlorethamine")
+cluster <- tmz_mam_names
+cluster_treatments <- c("Temozolomide", "MAM")
 ```
 
 Subset the original csmap of all per-sample putative signatures to contain all samples that contribute to the cluster: 
@@ -608,7 +608,7 @@ Or we can merge a subset of the group:
 
 ```{r merge subset of cluster}
 #define custom subset
-cluster_samples_subset <- cluster_samples[grep("IP", cluster_samples)]
+cluster_samples_subset <- cluster_samples[grep("Cisp|OXA", cluster_samples)]
 
 cluster_sig <- sigMerge(cluster_samples_subset, all_sigs, getWeights(cluster_samples_subset))
 ```
@@ -624,13 +624,19 @@ And if it looks fine, we can add this signature to our table of final_sigs:
 
 ```{r append treatment sig to final sigs}
 final2_sigs <- cbind(final2_sigs, cluster_sig)
-colnames(final2_sigs)[ncol(final2_sigs)] <- "Activated_PhIP_sig" #depending on the ID of the merged sig, you may need to change the column name to include further info e.g. the organoid line
+colnames(final2_sigs)[ncol(final2_sigs)] <- "Lomustine_Carmustine_sig" #depending on the ID of the merged sig, you may need to change the column name to include further info e.g. the organoid line
 ```
 
-Alternatively, the clustering may not indicate that the signatures need merging further. In this case, we can take signatures from the refined table and put them into the final signatures table as they are:
+Alternatively, the clustering may not indicate that the signatures need merging further. In this case, we can take signatures from the refined table and put them into the final signatures table as they are. 
 
 ```{r refined sig to final table}
-treatment_sig <- final_sigs$Melphalan_D95_sig
+treatment_sig <- final_sigs$`MNNG_sig`
 final2_sigs <- cbind(final2_sigs, treatment_sig)
-colnames(final2_sigs)[ncol(final2_sigs)] <- "Melphalan_D95_sig"
+colnames(final2_sigs)[ncol(final2_sigs)] <- "MNNG_sig"
+```
+
+We now have a final list of signatures. We can output this as a table.
+
+```{r write final sigs table}
+write.csv(final2_sigs, "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/expsigfinder_bg_removed_refined_final_SBS96.csv", row.names = FALSE)
 ```
