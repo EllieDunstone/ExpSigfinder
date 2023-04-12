@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/")
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_20230411_expsigfinder_SBS96/")
 ```
 
 ```{r packages, include=FALSE}
@@ -63,8 +63,38 @@ metadata <- read.table("/Users/ed4/Documents/phd/chemo_project/Metadata/WP4/wp4_
 
 Background needs to be calculated per organoid line, this chunk creates a mutation matrix for each line.
 
+In order to deal with the difference between the KO and WT iPSC lines, we will have to append to the patient name to differentiate them:
+
+```{r differentiate WT and KO iPSC lines}
+
+#fix metadata table
+for (i in 1:nrow(metadata)) {
+  if (any(grepl("cBOB", metadata[i,]))) {
+    if (any(grepl("KO", metadata[i,]))) {
+      metadata$patient[i] <- "PD44571_KO"
+      metadata$sample[i] <- paste0(substr(metadata$sample[i], 1, 7), "_KO", substr(metadata$sample[i], 8, nchar(metadata$sample[i])))
+    } else {
+      metadata$patient[i] <- "PD44571_WT"
+      metadata$sample[i] <- paste0(substr(metadata$sample[i], 1, 7), "_WT", substr(metadata$sample[i], 8, nchar(metadata$sample[i])))
+    }
+  }
+}
+
+#fix mutation matrix
+for (i in 2:ncol(mutation_matrix)) {
+  if (grepl("PD44571[i-n]", colnames(mutation_matrix)[i])) {
+    colnames(mutation_matrix)[i] <- paste0(substr(colnames(mutation_matrix)[i], 1, 7), "_KO", substr(colnames(mutation_matrix)[i], 8, nchar(colnames(mutation_matrix)[i]))) 
+  }
+  if (grepl("PD44571[o-v]", colnames(mutation_matrix)[i])) {
+    colnames(mutation_matrix)[i] <- paste0(substr(colnames(mutation_matrix)[i], 1, 7), "_WT", substr(colnames(mutation_matrix)[i], 8, nchar(colnames(mutation_matrix)[i]))) 
+  }
+}
+```
+
+
 ```{r subset matrix per donor}
 org_lines <- unique(metadata$patient) #grab all organoid line IDs
+
 
 for (org in org_lines) {
   assign(paste0(org, "_mutation_matrix"), cbind(MutationType = mutation_matrix[,1], dplyr::select(mutation_matrix, matches(org))))
@@ -75,7 +105,7 @@ for (org in org_lines) {
 
 ## Add metadata
 
-Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once? For now, select your organoid line first here:
+Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, select your organoid line first here:
 
 ```{r select org line}
 org <- "PD57287"
@@ -137,22 +167,10 @@ treatment_group <- filter(mutation_matrix_metadata, treatment == "thiotepa")
 group_names <- treatment_group$sample
 
 # Make profile of treatment group samples with background removed (input sample names here)
-Wrap_KOSig(PD41849_mutation_matrix, "bg_profile", group_names, 100, bg_mean, 2, "thiotepa")
+Wrap_KOSig(PD41850_mutation_matrix, "bg_profile", group_names, 100, bg_mean, 2, "thiotepa")
 sig <- read.table("thiotepa.txt", sep = "\t", header = T, as.is = T)
 plotCountbasis(sig, 1, 6, 9, paste0("thiotepa", ".pdf"))
 plotPercentagebasis(sig, 1, 6, 9, paste0("thiotepa", "_percentage.pdf"))
-
-# # Med
-# Wrap_KOSig(df,"bg_profile",c("EMSmedRep4c.1","EMSmedRep2c.1","EMSmedRep3c.1"),100, bg_mean*0.8,2,"EMSmed")
-# sig <- read.table("EMSmed.txt", sep = "\t", header = T, as.is = T)
-# plotCountbasis(sig,1,6,9,paste0("EMSmed",".pdf"))
-# plotPercentagebasis(sig,1,6,9,paste0("EMSmed","_percentage.pdf"))
-# 
-# # Low
-# Wrap_KOSig(df,"bg_profile",c("EMSlowRep2c.1","EMSlowRep3c.1","EMSlowRep4c.1"),100, bg_mean*0.8,3,"EMSlow")
-# sig <- read.table("EMSlow.txt", sep = "\t", header = T, as.is = T)
-# plotCountbasis(sig,1,6,9,paste0("EMSlow",".pdf"))
-# plotPercentagebasis(sig,1,6,9,paste0("EMSlow","_percentage.pdf"))
 ```
 
 Automated for all treatment groups:
@@ -199,7 +217,7 @@ for (i in custom_groups) {
   
   # Make profile of treatment group samples with background removed - skip and print error if one group fails
   tryCatch({
-    Wrap_KOSig(PD44571_mutation_matrix, "bg_profile", group_names, 100, bg_mean, 2, i)
+    Wrap_KOSig(PD53370_mutation_matrix, "bg_profile", group_names, 100, bg_mean, 2, i)
     sig <- read.table(paste0(i,".txt"), sep = "\t", header = T, as.is = T)
     plotCountbasis(sig, 1, 6, 9, paste0(i, ".pdf"))
     plotPercentagebasis(sig, 1, 6, 9, paste0(i, "_percentage.pdf"))}, error=function(e){cat(paste0("ERROR for group ", i, ": "),conditionMessage(e), "\n")})
@@ -217,18 +235,13 @@ non_control_samples <- filter(mutation_matrix_metadata, group != "Control")$samp
 #Run calculation and plotting for each sample
 for (i in non_control_samples) {
   print(paste0("Analysing sample: ", i))
-  
-  #select appropriate samples by treatment group
-  # treatment_group <- filter(mutation_matrix_metadata, treatment==i)
-  # group_names <- treatment_group$sample
-  # print(paste0(group_names))
-  
+
   # Make profile of sample with background removed - skip and print error if one sample fails
   tryCatch({
     Wrap_KOSig(PD57287_mutation_matrix, "bg_profile", i, 100, bg_mean, 2, i)
     sig <- read.table(paste0(i,".txt"), sep = "\t", header = T, as.is = T)
     plotCountbasis(sig, 1, 6, 9, paste0(i, ".pdf"))
-    plotPercentagebasis(sig, 1, 6, 9, paste0(i, "_percentage.pdf"))}, error=function(e){cat(paste0("ERROR for treatment group ", i, ": "),conditionMessage(e), "\n")})
+    plotPercentagebasis(sig, 1, 6, 9, paste0(i, "_percentage.pdf"))}, error=function(e){cat(paste0("ERROR for sample ", i, ": "),conditionMessage(e), "\n")})
 }
 
 ```
@@ -291,7 +304,7 @@ custom_group_summary_stats <-left_join(custom_group_summary_stats, select(CI_tab
 We can now combine the output signatures into a table for downstream analysis.
 
 ```{r generate sig table, message=FALSE}
-parent_dir <- "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/"
+parent_dir <- "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_20230411_expsigfinder_SBS96/"
 org_line_dirs <- list.files(parent_dir, pattern = "PD")
 
 #init dataframe
@@ -334,10 +347,8 @@ Make sure I understand the mathematical principles behind these calculations and
 
 Work out why some of the treatment groups are currently failing.
 
-Needs implementing so that it runs for all organoid lines in more automated way
 
-determine whether the treatment spectrum is different from the control?
-  - needs to incorporate the diffs in effective coverage somehow ..
+Work out how to decide which controls to use - are these sufficiently similar in spectrum and burden within each org line?
 
 
 Downstream analysis to determining whether the resulting signatures are significantly different between:
@@ -346,7 +357,6 @@ Downstream analysis to determining whether the resulting signatures are signific
   - Organoid lines: e.g. bendamustine in PD41849 vs. bendamustine in PD41850
   - Tissues of origin: e.g. is there evidence for a significant effect of tissue of origin, after accounting for the effect of donor of origin
 
-Improvements to the percentage plots?
 
 Error bars or other estimates of signature "confidence"?
 
