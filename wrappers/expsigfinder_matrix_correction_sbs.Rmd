@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230324_expsigfinder_SBS96/")
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_20230411_expsigfinder_SBS96/")
 ```
 
 ```{r packages, include=FALSE}
@@ -27,7 +27,7 @@ This script is part of ExpSigfinder-nano (https://github.com/EllieDunstone/ExpSi
 Read in the uncorrected mutation matrix. This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
 
 ```{r read matrix}
-mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/trint_subs_matrix_corrected.tsv", sep = "\t", header = T, as.is = T) 
+mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/data/trint_subs_matrix_corrected.tsv", sep = "\t", header = T, as.is = T) 
 ```
 
 If required, trim the sample names (sometimes these get output with the parent dir prefixed).
@@ -43,7 +43,7 @@ colnames(mutation_matrix)[-1] <- stringr::str_sub(colnames(mutation_matrix), 30,
 Read in the corrected mutation burden data for making the corrections.
 
 ```{r read corrected burdens}
-burdens <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/results.mut_burden_all.tsv", sep = "\t", header = T, as.is = T) 
+burdens <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/data/results.mut_burden_all.tsv", sep = "\t", header = T, as.is = T) 
 ```
 
 
@@ -72,7 +72,7 @@ for (file in mut_tables_list) {
 We can now subset this table to contain only samples with evidence of significant increase in mutagenesis, along with control samples:
 
 ```{r subset mutagenesis table}
-sign_mutagenesis_table <- filter(mutagenesis_table, sign_mutagenesis == "Y" | group == "control")
+sign_mutagenesis_table <- filter(mutagenesis_table, sign_mutagenesis == "Y" | group == "Control")
 ```
 
 
@@ -175,6 +175,6 @@ colnames(sign_mutation_matrix_coverage_corrected)[1] <- "MutationType"
 And output it for use in downstream analysis.
 
 ```{r output corrected matrix}
-write.csv(sign_mutation_matrix_coverage_corrected, "sign_mutation_matrix_coverage_corrected_fixed.csv", row.names = FALSE)
+write.csv(sign_mutation_matrix_coverage_corrected, "sign_mutation_matrix_coverage_corrected.csv", row.names = FALSE)
 ```
 
