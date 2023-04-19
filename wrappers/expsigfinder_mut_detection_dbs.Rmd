@@ -52,7 +52,7 @@ burdens <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_org
 
 We can now calculate the DBS burdens per base pair using the total number of DBS called per sample and the total base calls from the SBS burdens table.
 
-```{r calculate indel burdens}
+```{r calculate dbs burdens}
 #sum DBS to give total DBS calls
 dbs_burdens <- cbind(colnames(mutation_matrix)[-1], colSums(mutation_matrix[,-1]))
 colnames(dbs_burdens) <- c("sample", "dbs_call_sum")

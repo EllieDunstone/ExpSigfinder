@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230401/extractions/wp4_2530_20230401_expsigfinder_SBS96/")
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/")
 ```
 
 ```{r packages, include=FALSE}
@@ -29,7 +29,7 @@ This script is part of ExpSigfinder (https://github.com/EllieDunstone/ExpSigfind
 Read in the mutation matrix. This needs to be formatted with sample names in the "sample" column, and mutation classes as subsequent columns, with the counts of each mutation class in each sample as the matrix values.
 
 ```{r read matrix}
-mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230401/data/trint_subs_matrix_corrected.tsv", sep = "\t", header = T, as.is = T) 
+mutation_matrix <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/data/trint_subs_matrix_corrected.tsv", sep = "\t", header = T, as.is = T) 
 ```
 
 If required, trim the sample names (sometimes these get output with the parent dir prefixed).
@@ -45,7 +45,7 @@ colnames(mutation_matrix)[-1] <- stringr::str_sub(colnames(mutation_matrix), 32,
 Read in the corrected mutation burden data for identification of samples showing significant increase compared to the background.
 
 ```{r read corrected burdens}
-burdens <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230401/data/results.mut_burden_all.tsv", sep = "\t", header = T, as.is = T) 
+burdens <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/data/results.mut_burden_all.tsv", sep = "\t", header = T, as.is = T) 
 ```
 
 
@@ -75,7 +75,7 @@ for (org in org_lines) {
 Create a dataframe using the relevant metadata columns and the mutation matrix. This is currently at a per line level, could be automated to do all at once? For now, select your organoid line first here:
 
 ```{r select org line}
-org <- "PD52491"
+org <- "PD57287"
 ```
 
 
@@ -126,11 +126,11 @@ We now want to calculate the mean and confidence interval of corrected burdens f
 
 ```{r calculate background burden mean and CI}
 #Summary stats for bg burdens
-bg_summary_stats <- metadata %>% filter(sample %in% control_names & patient==org) %>% dplyr::group_by(group) %>%
+bg_summary_stats <- mutation_matrix_metadata_burdens %>% filter(sample %in% control_names & patient==org) %>% dplyr::group_by(group) %>%
    dplyr::summarise(mean = mean(burden), max = max(burden), min = min(burden), median = median(burden), sd = sd(burden), count = n())
 
 #Add 95% CIs to bg burden summary stats
-bg_CI_table <- as.data.table(filter(metadata, sample %in% control_names & patient == org))[,as.list(CI(burden)), by = group]
+bg_CI_table <- as.data.table(filter(mutation_matrix_metadata_burdens, sample %in% control_names & patient == org))[,as.list(CI(burden)), by = group]
 bg_summary_stats <-left_join(bg_summary_stats, select(bg_CI_table, -c(mean)), by = "group")
 ```
 
@@ -144,10 +144,10 @@ First, we can plot the same plot as above with the control distributions, but ad
 ```{r plot control burdens alongside treatment}
 
 #generate list of all non-control treatments
-treatment_list <- unique(filter(mutation_matrix_metadata_burdens, group != "control")$treatment)
+treatment_list <- unique(filter(mutation_matrix_metadata_burdens, group != "Control")$treatment)
 
 for (i in treatment_list) {
-  control_v_treatment_burdens_plot <- ggplot(filter(mutation_matrix_metadata_burdens, patient == org & (group == "control" | treatment == i)), aes(reorder(sample_name, -burden), burden, fill = group)) + geom_col() +
+  control_v_treatment_burdens_plot <- ggplot(filter(mutation_matrix_metadata_burdens, patient == org & (group == "Control" | treatment == i)), aes(reorder(sample_name, -burden), burden, fill = group)) + geom_col() +
   geom_linerange(aes(x = sample_name, ymin = burden_lci, ymax = burden_uci)) +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), strip.text.x = element_text(angle = 90)) +

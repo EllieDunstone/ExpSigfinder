@@ -9,7 +9,7 @@ editor_options:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/")
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_20230411_expsigfinder_SBS96/")
 ```
 
 ```{r load packages}
@@ -28,7 +28,7 @@ This script is for the downstream analysis of putative signatures output by ExpS
 ## Read in signature table
 
 ```{r read in sigs}
-all_sigs <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/expsigfinder_bg_removed_all_sigs_SBS96.csv", sep = ",", header = TRUE, row.names = 1)
+all_sigs <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_20230411_expsigfinder_SBS96/expsigfinder_bg_removed_all_sigs_SBS96.csv", sep = ",", header = TRUE, row.names = 1)
 ```
 
 ## Read in metadata
@@ -36,6 +36,24 @@ all_sigs <- read.table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_or
 ```{r read metadata}
 metadata <- read.table("/Users/ed4/Documents/phd/chemo_project/Metadata/WP4/wp4_sample_subsetting.csv", sep=",", header = TRUE)
 ```
+
+```{r differentiate WT and KO iPSC lines}
+
+#fix metadata table as in previous script
+for (i in 1:nrow(metadata)) {
+  if (any(grepl("cBOB", metadata[i,]))) {
+    if (any(grepl("KO", metadata[i,]))) {
+      metadata$patient[i] <- "PD44571_KO"
+      metadata$sample[i] <- paste0(substr(metadata$sample[i], 1, 7), "_KO", substr(metadata$sample[i], 8, nchar(metadata$sample[i])))
+    } else {
+      metadata$patient[i] <- "PD44571_WT"
+      metadata$sample[i] <- paste0(substr(metadata$sample[i], 1, 7), "_WT", substr(metadata$sample[i], 8, nchar(metadata$sample[i])))
+    }
+  }
+}
+```
+
+It is usually more useful to have the human-readable sample names in the matrix at this stage:s
 
 ```{r replace sample names if needed}
 
@@ -87,7 +105,7 @@ csmap = comparesignatures_cossim(reference_signatures, test_signatures)
 #Write out your output as table
 rownames(csmap) = colnames(reference_signatures)
 colnames(csmap) = colnames(test_signatures)
-write.csv(csmap, file = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/20230404_expsigfinder_cossim_all_v_all.csv", row.names = TRUE)
+write.csv(csmap, file = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_20230411_expsigfinder_SBS96/expsigfinder_cossim_all_v_all.csv", row.names = TRUE)
 ```
 
 ## Subset results data for plotting (optional)
@@ -186,7 +204,10 @@ library(ape)
 
 big_colour = grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)]
 
-treatment_group = gsub("_[^ ]*", "", clust_csmap_dist$labels)
+treatment_group = strsplit(clust_csmap_dist$labels, "-")[[1]][2]
+treatment_group <- sapply(strsplit(clust_csmap_dist$labels, "-"), function(x) x[2])
+
+
 # check the TYPE numbers are correct
 big_colour_palette <- sample(big_colour, length(unique(treatment_group)))
 col_assignment = big_colour_palette[1:length(unique(treatment_group))]
@@ -194,7 +215,7 @@ names(col_assignment) = unique(treatment_group)
 cols = col_assignment[treatment_group]
 # then pass COLS into your plot
 
-plot(as.phylo(clust_csmap_dist), type = "fan", cex=0.5, label.offset = 0.1, tip.color = cols)
+plot(as.phylo(clust_csmap_dist), type = "fan", cex=0.5, label.offset = 0.1)
 
 ```
 
@@ -216,8 +237,13 @@ t_all_sigs_metadata <- left_join(t_all_sigs_df, metadata)
 all_sigs.pca <- prcomp(t_all_sigs, center = TRUE, scale. = TRUE)
 summary(all_sigs.pca)
 
+
+my_colors <- c(natparks.pals("Charmonix"), natparks.pals("Cuyahoga"), natparks.pals("LakeNakuru"), natparks.pals("Denali"), natparks.pals("GrandCanyon"))
+
 ggbiplot(all_sigs.pca, var.axes = FALSE, groups = t_all_sigs_metadata$treatment) +
-  theme_classic()
+  scale_color_manual(values = my_colors) +
+  theme_classic() +
+  geom_text_repel(aes(label = t_all_sigs_metadata$sample_name), size = 3, max.overlaps = 5)
 
 ```
 
@@ -227,7 +253,7 @@ Here I am trialing tSNE to cluster the signatures.
 
 ```{r tSNE}
 tsne(all_sigs, labels=t_all_sigs_metadata$treatment, text=t_all_sigs_metadata$treatment,
-textlabelsize = 2, perplex = 10)
+textlabelsize = 2, perplex = 10, colvec = my_colors[1:length(unique(t_all_sigs_metadata$treatment))])
 ```
 
 ## Plot results as a UMAP
@@ -290,7 +316,7 @@ We want to define a function that we can use to merge putative signatures if we 
 We will need the burdens table to calculate the appropriate weightings:
 
 ```{r read burdens and merge metadata}
-burdens <- read_table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/data/results.mut_burden_all.tsv")
+burdens <- read_table("/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/data/results.mut_burden_all.tsv")
 burdens_metadata <- left_join(burdens, select(metadata, sample, sample_name))
 ```
 
@@ -355,7 +381,7 @@ for (t in treatment_list) {
 For a given treatment, we can look at the cosine similarity results for the relevant samples:
 
 ```{r select treatment}
-tre <- "MNNG"
+tre <- "12DMH+S9"
 ```
 
 ```{r subset csmap treatment}
@@ -387,7 +413,7 @@ Or we can merge a subset of the group:
 
 ```{r merge subset of treatment group}
 #define custom subset
-tre_samples_subset <- tre_samples[grep("D95", tre_samples)]
+tre_samples_subset <- tre_samples[grepl("D95", tre_samples)]
 
 treatment_sig <- sigMerge(tre_samples_subset, all_sigs, getWeights(tre_samples_subset))
 ```
@@ -410,9 +436,9 @@ colnames(final_sigs)[ncol(final_sigs)] <- paste0(tre, "_sig") #depending on the 
 If we want to add a single sample as a signature to the final sigs table:
 
 ```{r single sig to final table}
-treatment_sig <- all_sigs$`D95_MX+S9_350`
+treatment_sig <- all_sigs$`D95-CLAB-12.5-new`
 final_sigs <- cbind(final_sigs, treatment_sig)
-colnames(final_sigs)[ncol(final_sigs)] <- "MX+S9_D95_sig"
+colnames(final_sigs)[ncol(final_sigs)] <- "D95-CLAB-12.5-new"
 ```
 
 
@@ -429,7 +455,7 @@ treatment_list
 We now have a refined list of signatures. We can output this as a table.
 
 ```{r write refined sigs table}
-write.csv(final_sigs, "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/expsigfinder_bg_removed_refined_by_treatment_SBS96.csv", row.names = FALSE)
+  write.csv(final_sigs, "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_20230411_expsigfinder_SBS96/expsigfinder_bg_removed_refined_by_treatment_SBS96.csv", row.names = FALSE)
 ```
 
 We can now explore the similarities between the refined signatures by recalculating cosine similarities as above.
@@ -450,7 +476,7 @@ csmap_refined_sigs = comparesignatures_cossim(reference_signatures, test_signatu
 #Write out your output as table
 rownames(csmap_refined_sigs) = colnames(reference_signatures)
 colnames(csmap_refined_sigs) = colnames(test_signatures)
-write.csv(csmap_refined_sigs, file = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/expsigfinder_cossim_all_v_all_treatment_refined_sigs.csv", row.names = TRUE)
+write.csv(csmap_refined_sigs, file = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_20230411_expsigfinder_SBS96/expsigfinder_cossim_all_v_all_treatment_refined_sigs.csv", row.names = TRUE)
 ```
 
 ```{r heatmap refined sigs}
@@ -555,11 +581,11 @@ textlabelsize = 2)
 Using the results above, you should be able to identify clusters of putative signatures where there may be underlying signatures in common. Define these below:
 
 ```{r define putative signature clusters}
-c2a_subset_names <- c("PhIP+S9_sig", "N-OH-PhIP_sig", "Mitomycin C_sig", "BaP_sig")
-alk_subset_names <- c("Melphalan_D88_sig", "Melphalan_D95_sig", "Bendamustine_sig", "Chlorambucil_sig", "Mechlorethamine_sig")
-platinum_names <- c("Carboplatin_sig", "Cisplatin_D88_sig", "Cisplatin_D95_sig", "Oxaliplatin_sig")
+c2a_subset_names <- c("AFB1_sig", "N-OH-PhIP_sig", "Mitomycin C_sig", "BaP_sig", "KBRO3_sig")
+alk_subset_names <- c("Melphalan_sig", "Chlorambucil_D88_sig", "Bendamustine_sig", "D95-CLAB-12.5-new", "Mechlorethamine_sig")
+platinum_names <- c("Carboplatin_sig", "Cisplatin_sig", "Oxaliplatin_sig")
 locarmustine_names <- c("Lomustine_sig", "Carmustine_sig")
-tmz_mam_names <- c("Temozolomide_sig", "MAM_sig")
+tmz_mam_mnng_names <- c("Temozolomidestandard_gastric_sig", "Temozolomide_30d_gastric_sig", "cBOB_KO-1_TMZ 7.5", "cBOB_TMZ_200_7d", "cBOB_WT-1_TMZ 200", "MAM_gastric_sig", "MAM_colon_sig", "SC351_MAM_500", "MNNG_sig")
 ```
 
 And initialise a matrix of final signatures:
@@ -573,8 +599,8 @@ colnames(final2_sigs)[1] <- "MutationType"
 For each cluster, we can now inspect in further detail.
 
 ```{r select cluster}
-cluster <- tmz_mam_names
-cluster_treatments <- c("Temozolomide", "MAM")
+cluster <- tmz_mam_mnng_names
+cluster_treatments <- c("Temozolomide", "MNNG", "MAM")
 ```
 
 Subset the original csmap of all per-sample putative signatures to contain all samples that contribute to the cluster: 
@@ -630,13 +656,13 @@ colnames(final2_sigs)[ncol(final2_sigs)] <- "Lomustine_Carmustine_sig" #dependin
 Alternatively, the clustering may not indicate that the signatures need merging further. In this case, we can take signatures from the refined table and put them into the final signatures table as they are. 
 
 ```{r refined sig to final table}
-treatment_sig <- final_sigs$`MNNG_sig`
+treatment_sig <- final_sigs$`12DMH+S9_sig`
 final2_sigs <- cbind(final2_sigs, treatment_sig)
-colnames(final2_sigs)[ncol(final2_sigs)] <- "MNNG_sig"
+colnames(final2_sigs)[ncol(final2_sigs)] <- "12DMH+S9_sig"
 ```
 
 We now have a final list of signatures. We can output this as a table.
 
 ```{r write final sigs table}
-write.csv(final2_sigs, "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230127/extractions/wp4_2530_20230404_expsigfinder_SBS96_fixed/expsigfinder_bg_removed_refined_final_SBS96.csv", row.names = FALSE)
+write.csv(final2_sigs, "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_20230411_expsigfinder_SBS96/expsigfinder_bg_removed_refined_final_SBS96.csv", row.names = FALSE)
 ```
