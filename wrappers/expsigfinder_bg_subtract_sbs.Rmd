@@ -7,14 +7,14 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_20230411_expsigfinder_SBS96/")
+knitr::opts_knit$set(root.dir = "/Users/ed4/Documents/phd/chemo_project/BotSeq/WP4/KCL_organoid_work/wp4_2530_20230406/extractions/wp4_2530_expsigfinder_SBS96_test_boundary//")
 ```
 
 ```{r packages, include=FALSE}
 ##load packages
 library(tidyverse)
-library(ExpSigfinder)
-#library(ExpSigfinder-nano)
+#library(ExpSigfinder)
+library(ExpSigfinder-nano)
 library(Rmisc)
 library(ggrepel)
 library(data.table)
