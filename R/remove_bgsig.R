@@ -24,7 +24,7 @@ Wrap_KOSig <- function(MutCatalogue, bg_column, ko_column, sampling_number, star
 #' @param boundary Range of signature around centroid (default = 2)
 #' @return data.frame including background signature and experiment signature
 #' @export 
-RemoveBackground_vector_single <- function(background_profile, sig_profile, sampling_number, start_num, boundary = 2.5){
+RemoveBackground_vector_single <- function(background_profile, sig_profile, sampling_number, start_num, boundary = 4){
   
   #Calculate number of mutation channels
   nTypes <- length(sig_profile)
